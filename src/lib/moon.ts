@@ -136,5 +136,8 @@ export function synodicDayFor(
   if (!latest) return null;
   const firstDay = addDaysISO(latest, 1);
   const day = isoToJDN(dateISO) - isoToJDN(firstDay) + 1;
+  // Синодический месяц не может длиться дольше ~31 дня (редкая аномалия).
+  // Если наблюдение не обновили вовремя, дальше 31-го дня счётчик не показываем.
+  if (day > 31) return null;
   return { day, firstDayISO: firstDay, observationISO: latest };
 }
