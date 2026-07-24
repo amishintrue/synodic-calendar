@@ -1,0 +1,18 @@
+{
+  "name": "Лунный календарь",
+  "short_name": "Луна",
+  "description": "Календарь наблюдения синодического месяца с фазами луны и напоминаниями",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
