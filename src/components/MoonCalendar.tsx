@@ -375,16 +375,6 @@ export default function MoonCalendar() {
         })}
       </div>
 
-      {/* Легенда */}
-      <div className="mt-3 grid grid-cols-1 gap-1.5 rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400 sm:grid-cols-2">
-        <div><span className="font-bold text-sky-300">12</span> — число солнечного (григорианского) месяца</div>
-        <div><span className="font-bold text-amber-400">3</span> — число синодического месяца (после отметки наблюдения)</div>
-        <div>👁️ <span className="text-emerald-400">рамка</span> — день наблюдения нового месяца</div>
-        <div><span className="text-amber-400">Рамка</span> — 1-й день синодического месяца</div>
-        <div><span className="inline-block h-2 w-2 rounded-full bg-violet-400 align-middle" /> — есть напоминание</div>
-        <div>Пиктограммы фаз: алгоритм «Тригонометрический 2» (tea-qt П. Семилетова)</div>
-      </div>
-
       {/* Список напоминаний */}
       <section className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-4">
         <h2 className="mb-2 text-sm font-bold text-slate-200">🔔 Мои напоминания</h2>
