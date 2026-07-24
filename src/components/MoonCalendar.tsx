@@ -15,7 +15,7 @@ import {
   weekdayOfISO,
 } from "@/lib/moon";
 
-type Observation = { id: number; date: string };
+type Observation = { id: number; date: string; comment: string | null };
 type Reminder = {
   id: number;
   title: string;
@@ -80,6 +80,9 @@ export default function MoonCalendar() {
   const [remTime, setRemTime] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Комментарий к наблюдению
+  const [obsComment, setObsComment] = useState("");
+
   const loadAll = useCallback(async () => {
     const [obsRes, remRes, setRes] = await Promise.all([
       fetch("/api/observations"),
@@ -100,8 +103,22 @@ export default function MoonCalendar() {
     }
   }, [loadAll]);
 
+  // При открытии дня подставляем в поле уже сохранённый комментарий (если есть)
+  useEffect(() => {
+    if (selected) {
+      setObsComment(obsByDate.get(selected)?.comment ?? "");
+    } else {
+      setObsComment("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
   const obsDates = useMemo(
     () => observations.map((o) => o.date).sort(),
+    [observations]
+  );
+  const obsByDate = useMemo(
+    () => new Map(observations.map((o) => [o.date, o])),
     [observations]
   );
 
@@ -184,15 +201,25 @@ export default function MoonCalendar() {
     });
   };
 
-  const toggleObservation = async (iso: string) => {
+  const toggleObservation = async (iso: string, comment?: string) => {
     const exists = obsDates.includes(iso);
     const res = exists
       ? await fetch(`/api/observations?date=${iso}`, { method: "DELETE" })
       : await fetch("/api/observations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date: iso }),
+          body: JSON.stringify({ date: iso, comment }),
         });
+    setObservations(await res.json());
+  };
+
+  // Сохранить/изменить комментарий, не снимая отметку наблюдения
+  const saveComment = async (iso: string, comment: string) => {
+    const res = await fetch("/api/observations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: iso, comment }),
+    });
     setObservations(await res.json());
   };
 
@@ -330,47 +357,54 @@ export default function MoonCalendar() {
           const isToday = iso === today;
           const rems = remindersFor(iso);
 
+          const dayComment = obsByDate.get(iso)?.comment ?? null;
           return (
-            <button
-              key={iso}
-              onClick={() => { setSelected(iso); setRemKind("date"); setRemTitle(""); setRemTime(""); }}
-              className={`relative flex min-h-[72px] flex-col items-center justify-center rounded-lg border bg-black p-0.5 transition hover:border-sky-500 sm:min-h-[86px] ${
-                isToday
-                  ? "border-white ring-1 ring-white"
-                  : isFirstSyn
-                    ? "border-amber-400 ring-1 ring-amber-400"
-                    : isObs
-                      ? "border-emerald-400 ring-1 ring-emerald-400"
-                      : "border-slate-800"
-              }`}
-              title={`${p.d} ${MONTHS[p.m - 1]}: ${moonPhaseName(phase)} (лунный день ${phase})`}
-            >
-              {/* Число солнечного месяца — вверху слева */}
-              <span className="absolute left-1 top-0.5 text-[11px] font-bold leading-4 text-sky-300 sm:text-sm">
-                {p.d}
-              </span>
-              {/* Отметка наблюдения */}
-              {isObs && (
-                <span className="absolute right-1 top-0.5 text-[10px]" title="День наблюдения нового месяца">👁️</span>
-              )}
-              {/* Пиктограмма */}
-              <MoonIcon moonDay={phase} size={30} />
-              {/* Число синодического месяца — внизу справа */}
-              {syn && syn.day >= 1 && (
-                <span
-                  className={`absolute bottom-0.5 right-1 text-[11px] font-bold leading-4 sm:text-sm ${
-                    syn.day > 30 ? "text-rose-400" : "text-amber-400"
-                  }`}
-                  title={`День синодического месяца${isFirstSyn ? " — первый день!" : ""}`}
-                >
-                  {syn.day}
+            <div key={iso} className="group relative">
+              <button
+                onClick={() => { setSelected(iso); setRemKind("date"); setRemTitle(""); setRemTime(""); }}
+                className={`relative flex min-h-[72px] w-full flex-col items-center justify-center rounded-lg border bg-black p-0.5 transition hover:border-sky-500 sm:min-h-[86px] ${
+                  isToday
+                    ? "border-white ring-1 ring-white"
+                    : isFirstSyn
+                      ? "border-amber-400 ring-1 ring-amber-400"
+                      : isObs
+                        ? "border-emerald-400 ring-1 ring-emerald-400"
+                        : "border-slate-800"
+                }`}
+              >
+                {/* Число солнечного месяца — вверху слева */}
+                <span className="absolute left-1 top-0.5 text-[11px] font-bold leading-4 text-sky-300 sm:text-sm">
+                  {p.d}
                 </span>
-              )}
-              {/* Напоминания */}
-              {rems.length > 0 && (
-                <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-violet-400" />
-              )}
-            </button>
+                {/* Отметка наблюдения */}
+                {isObs && (
+                  <span className="absolute right-1 top-0.5 text-[10px]">👁️</span>
+                )}
+                {/* Пиктограмма */}
+                <MoonIcon moonDay={phase} size={30} />
+                {/* Число синодического месяца — внизу справа */}
+                {syn && syn.day >= 1 && (
+                  <span
+                    className={`absolute bottom-0.5 right-1 text-[11px] font-bold leading-4 sm:text-sm ${
+                      syn.day > 30 ? "text-rose-400" : "text-amber-400"
+                    }`}
+                  >
+                    {syn.day}
+                  </span>
+                )}
+                {/* Напоминания */}
+                {rems.length > 0 && (
+                  <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-violet-400" />
+                )}
+              </button>
+              {/* Кастомная подсказка при наведении (нужна, чтобы комментарий можно было выделить жирным) */}
+              <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-[11px] leading-snug text-slate-200 shadow-lg group-hover:block">
+                <div>
+                  {p.d} {MONTHS[p.m - 1]}: {moonPhaseName(phase)} (лунный день {phase})
+                </div>
+                {dayComment && <div className="mt-1 font-bold text-amber-300">{dayComment}</div>}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -444,8 +478,8 @@ export default function MoonCalendar() {
             </div>
 
             <button
-              onClick={() => toggleObservation(selInfo.iso)}
-              className={`mb-4 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+              onClick={() => toggleObservation(selInfo.iso, obsComment)}
+              className={`mb-2 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 selInfo.isObs
                   ? "bg-rose-600/20 text-rose-300 hover:bg-rose-600/30"
                   : "bg-emerald-600 text-white hover:bg-emerald-500"
@@ -456,10 +490,32 @@ export default function MoonCalendar() {
                 : "👁️ Я наблюдал(а) новый месяц этим вечером"}
             </button>
             {!selInfo.isObs && (
-              <p className="-mt-2 mb-4 text-[11px] text-slate-500">
+              <p className="-mt-1 mb-2 text-[11px] text-slate-500">
                 Следующий день ({addDaysISO(selInfo.iso, 1).split("-").reverse().join(".")}) станет 1-м днём синодического месяца.
               </p>
             )}
+
+            {/* Комментарий к наблюдению */}
+            <div className="mb-4">
+              <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
+                Комментарий (необязательно)
+              </label>
+              <textarea
+                value={obsComment}
+                onChange={(e) => setObsComment(e.target.value)}
+                placeholder="Например: было облачно, плохая видимость…"
+                rows={2}
+                className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-sky-500"
+              />
+              {selInfo.isObs && (
+                <button
+                  onClick={() => saveComment(selInfo.iso, obsComment)}
+                  className="mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+                >
+                  💾 Сохранить комментарий
+                </button>
+              )}
+            </div>
 
             {/* Напоминания этого дня */}
             {selInfo.rems.length > 0 && (
