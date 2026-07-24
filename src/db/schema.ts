@@ -14,6 +14,7 @@ import {
 export const observations = pgTable("observations", {
   id: serial("id").primaryKey(),
   date: date("date", { mode: "string" }).notNull().unique(),
+  comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
