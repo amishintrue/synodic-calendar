@@ -35,6 +35,16 @@ const WEEKDAYS_FULL = [
 ];
 const WEEKDAYS_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
+/** VAPID-ключ приходит в base64url — Web Push API ожидает Uint8Array. */
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
 function MoonIcon({ moonDay, size = 34 }: { moonDay: number; size?: number }) {
   const tile = moonTilePosition(moonDay);
   const s = size / MOON_SPRITE.tileH;
@@ -82,6 +92,15 @@ export default function MoonCalendar() {
   const [remTime, setRemTime] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Редактирование существующего напоминания
+  const [editingReminderId, setEditingReminderId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editKind, setEditKind] = useState<"date" | "weekly">("date");
+  const [editDate, setEditDate] = useState("");
+  const [editWeekday, setEditWeekday] = useState(0);
+  const [editTime, setEditTime] = useState("");
+  const [showPast, setShowPast] = useState(false);
+
   // Комментарий к наблюдению
   const [obsComment, setObsComment] = useState("");
 
@@ -104,7 +123,9 @@ export default function MoonCalendar() {
     loadAll();
     if (typeof window !== "undefined" && "Notification" in window) {
       setNotifPerm(Notification.permission);
+      if (Notification.permission === "granted") ensurePushSubscription();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadAll]);
 
   // При открытии дня подставляем в поле уже сохранённую заметку (если есть) —
@@ -131,6 +152,17 @@ export default function MoonCalendar() {
     [notes]
   );
 
+  // Предстоящие и прошедшие одноразовые напоминания — прошедшие скрываем
+  // по умолчанию, чтобы список не захламлялся.
+  const upcomingReminders = useMemo(
+    () => reminders.filter((r) => !(r.kind === "date" && r.date && r.date < today)),
+    [reminders, today]
+  );
+  const pastReminders = useMemo(
+    () => reminders.filter((r) => r.kind === "date" && r.date && r.date < today),
+    [reminders, today]
+  );
+
   /* ---------- Уведомления о приближении нового месяца ---------- */
   const todaySynodic = synodicDayFor(today, obsDates);
   const todayPhase = moonPhaseTrig2(t.y, t.m, t.d);
@@ -155,19 +187,37 @@ export default function MoonCalendar() {
     );
   }, [reminders, today]);
 
-  // Системное уведомление (раз в день)
+  // Уведомления в браузере, пока сайт открыт: проверяем раз в минуту и
+  // учитываем точное время каждого напоминания (а не только день).
   useEffect(() => {
     if (!loaded || typeof window === "undefined" || !("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
-    const guard = `moon-notified-${today}`;
-    if (localStorage.getItem(guard)) return;
-    const lines: string[] = [];
-    if (moonAlert) lines.push(moonAlert.text);
-    for (const r of todaysReminders) lines.push(`Напоминание: ${r.title}${r.time ? " в " + r.time : ""}`);
-    if (lines.length > 0) {
-      new Notification("Лунный календарь", { body: lines.join("\n") });
-      localStorage.setItem(guard, "1");
-    }
+
+    const check = () => {
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+      if (moonAlert) {
+        const key = `moon-notified-${today}`;
+        if (!localStorage.getItem(key)) {
+          new Notification("Лунный календарь", { body: moonAlert.text });
+          localStorage.setItem(key, "1");
+        }
+      }
+      for (const r of todaysReminders) {
+        if (r.time && r.time > hhmm) continue; // время ещё не наступило
+        const key = `rem-notified-${r.id}-${today}`;
+        if (localStorage.getItem(key)) continue;
+        new Notification("Лунный календарь", {
+          body: `Напоминание: ${r.title}${r.time ? " в " + r.time : ""}`,
+        });
+        localStorage.setItem(key, "1");
+      }
+    };
+
+    check();
+    const interval = setInterval(check, 60_000);
+    return () => clearInterval(interval);
   }, [loaded, moonAlert, todaysReminders, today]);
 
   /* ---------- Сетка месяца ---------- */
@@ -257,12 +307,146 @@ export default function MoonCalendar() {
   const deleteReminder = async (id: number) => {
     await fetch(`/api/reminders/${id}`, { method: "DELETE" });
     setReminders((prev) => prev.filter((r) => r.id !== id));
+    if (editingReminderId === id) setEditingReminderId(null);
   };
+
+  const startEditReminder = (r: Reminder) => {
+    setEditingReminderId(r.id);
+    setEditTitle(r.title);
+    setEditKind(r.kind);
+    setEditDate(r.date ?? today);
+    setEditWeekday(r.weekday ?? 0);
+    setEditTime(r.time ?? "");
+  };
+
+  const saveEditedReminder = async (id: number) => {
+    if (!editTitle.trim()) return;
+    const res = await fetch(`/api/reminders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editTitle,
+        kind: editKind,
+        date: editKind === "date" ? editDate : undefined,
+        weekday: editKind === "weekly" ? editWeekday : undefined,
+        time: editTime || undefined,
+      }),
+    });
+    if (res.ok) {
+      const row = await res.json();
+      setReminders((prev) => prev.map((r) => (r.id === id ? row : r)));
+      setEditingReminderId(null);
+    }
+  };
+
+  const ensurePushSubscription = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) return; // push ещё не настроен (нет ключей на сервере)
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const existing = await reg.pushManager.getSubscription();
+      const sub =
+        existing ??
+        (await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        }));
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+    } catch (err) {
+      console.error("Не удалось оформить push-подписку:", err);
+    }
+  }, []);
 
   const requestNotifications = async () => {
     if (!("Notification" in window)) return;
     const p = await Notification.requestPermission();
     setNotifPerm(p);
+    if (p === "granted") await ensurePushSubscription();
+  };
+
+  const renderReminderRow = (r: Reminder) => {
+    if (editingReminderId === r.id) {
+      return (
+        <li key={r.id} className="rounded-lg border border-sky-600/40 bg-slate-800/60 px-3 py-2">
+          <input
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            className="mb-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-sky-500"
+          />
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <label className={`flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1 ${editKind === "date" ? "border-sky-500 bg-sky-500/10 text-sky-300" : "border-slate-700 text-slate-400"}`}>
+              <input type="radio" className="hidden" checked={editKind === "date"} onChange={() => setEditKind("date")} /> 📅
+            </label>
+            {editKind === "date" && (
+              <input
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
+              />
+            )}
+            <label className={`flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1 ${editKind === "weekly" ? "border-sky-500 bg-sky-500/10 text-sky-300" : "border-slate-700 text-slate-400"}`}>
+              <input type="radio" className="hidden" checked={editKind === "weekly"} onChange={() => setEditKind("weekly")} /> 🔁
+            </label>
+            {editKind === "weekly" && (
+              <select
+                value={editWeekday}
+                onChange={(e) => setEditWeekday(Number(e.target.value))}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
+              >
+                {WEEKDAYS_FULL.map((w, i) => (
+                  <option key={i} value={i}>{w}</option>
+                ))}
+              </select>
+            )}
+            <input
+              type="time"
+              value={editTime}
+              onChange={(e) => setEditTime(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => saveEditedReminder(r.id)}
+              disabled={!editTitle.trim()}
+              className="rounded-lg bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-40"
+            >
+              Сохранить
+            </button>
+            <button
+              onClick={() => setEditingReminderId(null)}
+              className="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
+            >
+              Отмена
+            </button>
+          </div>
+        </li>
+      );
+    }
+    return (
+      <li key={r.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-800/60 px-3 py-2 text-sm">
+        <span className="text-slate-200">
+          {r.title}
+          <span className="ml-2 text-xs text-slate-400">
+            {r.kind === "date"
+              ? `📅 ${r.date?.split("-").reverse().join(".")}`
+              : `🔁 каждый(-ую) ${WEEKDAYS_FULL[r.weekday ?? 0].toLowerCase()}`}
+            {r.time ? ` · ${r.time}` : ""}
+          </span>
+        </span>
+        <span className="flex shrink-0 gap-1">
+          <button onClick={() => startEditReminder(r)} className="rounded-md px-2 py-1 text-xs text-sky-400 hover:bg-sky-500/10">✏️</button>
+          <button onClick={() => deleteReminder(r.id)} className="rounded-md px-2 py-1 text-xs text-rose-400 hover:bg-rose-500/10">Удалить</button>
+        </span>
+      </li>
+    );
   };
 
   /* ---------- Рендер ---------- */
@@ -424,27 +608,24 @@ export default function MoonCalendar() {
         {reminders.length === 0 && (
           <p className="text-xs text-slate-500">Пока нет напоминаний. Нажмите на день календаря, чтобы добавить.</p>
         )}
-        <ul className="space-y-1.5">
-          {reminders.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-800/60 px-3 py-2 text-sm">
-              <span className="text-slate-200">
-                {r.title}
-                <span className="ml-2 text-xs text-slate-400">
-                  {r.kind === "date"
-                    ? `📅 ${r.date?.split("-").reverse().join(".")}`
-                    : `🔁 каждый(-ую) ${WEEKDAYS_FULL[r.weekday ?? 0].toLowerCase()}`}
-                  {r.time ? ` · ${r.time}` : ""}
-                </span>
-              </span>
-              <button
-                onClick={() => deleteReminder(r.id)}
-                className="shrink-0 rounded-md px-2 py-1 text-xs text-rose-400 hover:bg-rose-500/10"
-              >
-                Удалить
-              </button>
-            </li>
-          ))}
-        </ul>
+        {reminders.length > 0 && upcomingReminders.length === 0 && (
+          <p className="text-xs text-slate-500">Нет предстоящих напоминаний.</p>
+        )}
+        <ul className="space-y-1.5">{upcomingReminders.map((r) => renderReminderRow(r))}</ul>
+
+        {pastReminders.length > 0 && (
+          <div className="mt-3 border-t border-slate-800 pt-2">
+            <button
+              onClick={() => setShowPast((v) => !v)}
+              className="text-xs text-slate-500 underline decoration-dotted hover:text-slate-300"
+            >
+              {showPast ? "▲ Скрыть прошедшие" : `▼ Показать прошедшие (${pastReminders.length})`}
+            </button>
+            {showPast && (
+              <ul className="mt-2 space-y-1.5 opacity-70">{pastReminders.map((r) => renderReminderRow(r))}</ul>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Модальное окно дня */}
