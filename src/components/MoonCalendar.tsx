@@ -15,7 +15,8 @@ import {
   weekdayOfISO,
 } from "@/lib/moon";
 
-type Observation = { id: number; date: string; comment: string | null };
+type Observation = { id: number; date: string };
+type Note = { date: string; comment: string };
 type Reminder = {
   id: number;
   title: string;
@@ -68,6 +69,7 @@ export default function MoonCalendar() {
   const [viewYear, setViewYear] = useState(t.y);
   const [viewMonth, setViewMonth] = useState(t.m); // 1..12
   const [observations, setObservations] = useState<Observation[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [weekStart, setWeekStart] = useState<"sunday" | "monday">("sunday");
   const [loaded, setLoaded] = useState(false);
@@ -84,15 +86,17 @@ export default function MoonCalendar() {
   const [obsComment, setObsComment] = useState("");
 
   const loadAll = useCallback(async () => {
-    const [obsRes, remRes, setRes] = await Promise.all([
+    const [obsRes, remRes, setRes, notesRes] = await Promise.all([
       fetch("/api/observations"),
       fetch("/api/reminders"),
       fetch("/api/settings"),
+      fetch("/api/notes"),
     ]);
     setObservations(await obsRes.json());
     setReminders(await remRes.json());
     const s = await setRes.json();
     if (s.weekStart === "monday" || s.weekStart === "sunday") setWeekStart(s.weekStart);
+    setNotes(await notesRes.json());
     setLoaded(true);
   }, []);
 
@@ -103,10 +107,11 @@ export default function MoonCalendar() {
     }
   }, [loadAll]);
 
-  // При открытии дня подставляем в поле уже сохранённый комментарий (если есть)
+  // При открытии дня подставляем в поле уже сохранённую заметку (если есть) —
+  // заметка не привязана к отметке наблюдения, доступна для любого дня.
   useEffect(() => {
     if (selected) {
-      setObsComment(obsByDate.get(selected)?.comment ?? "");
+      setObsComment(notesByDate.get(selected)?.comment ?? "");
     } else {
       setObsComment("");
     }
@@ -120,6 +125,10 @@ export default function MoonCalendar() {
   const obsByDate = useMemo(
     () => new Map(observations.map((o) => [o.date, o])),
     [observations]
+  );
+  const notesByDate = useMemo(
+    () => new Map(notes.map((n) => [n.date, n])),
+    [notes]
   );
 
   /* ---------- Уведомления о приближении нового месяца ---------- */
@@ -201,26 +210,26 @@ export default function MoonCalendar() {
     });
   };
 
-  const toggleObservation = async (iso: string, comment?: string) => {
+  const toggleObservation = async (iso: string) => {
     const exists = obsDates.includes(iso);
     const res = exists
       ? await fetch(`/api/observations?date=${iso}`, { method: "DELETE" })
       : await fetch("/api/observations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date: iso, comment }),
+          body: JSON.stringify({ date: iso }),
         });
     setObservations(await res.json());
   };
 
-  // Сохранить/изменить комментарий, не снимая отметку наблюдения
-  const saveComment = async (iso: string, comment: string) => {
-    const res = await fetch("/api/observations", {
+  // Сохранить заметку к любому дню (не только к дню наблюдения)
+  const saveNote = async (iso: string, comment: string) => {
+    const res = await fetch("/api/notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date: iso, comment }),
     });
-    setObservations(await res.json());
+    setNotes(await res.json());
   };
 
   const addReminder = async () => {
@@ -357,7 +366,7 @@ export default function MoonCalendar() {
           const isToday = iso === today;
           const rems = remindersFor(iso);
 
-          const dayComment = obsByDate.get(iso)?.comment ?? null;
+          const dayComment = notesByDate.get(iso)?.comment ?? null;
           return (
             <div key={iso} className="group relative">
               <button
@@ -478,7 +487,7 @@ export default function MoonCalendar() {
             </div>
 
             <button
-              onClick={() => toggleObservation(selInfo.iso, obsComment)}
+              onClick={() => toggleObservation(selInfo.iso)}
               className={`mb-2 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 selInfo.isObs
                   ? "bg-rose-600/20 text-rose-300 hover:bg-rose-600/30"
@@ -495,10 +504,10 @@ export default function MoonCalendar() {
               </p>
             )}
 
-            {/* Комментарий к наблюдению */}
+            {/* Заметка к дню — доступна для любого дня, не только для наблюдения */}
             <div className="mb-4">
               <label className="mb-1 block text-xs font-bold uppercase text-slate-400">
-                Комментарий (необязательно)
+                Заметка к этому дню (необязательно)
               </label>
               <textarea
                 value={obsComment}
@@ -507,14 +516,12 @@ export default function MoonCalendar() {
                 rows={2}
                 className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-sky-500"
               />
-              {selInfo.isObs && (
-                <button
-                  onClick={() => saveComment(selInfo.iso, obsComment)}
-                  className="mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
-                >
-                  💾 Сохранить комментарий
-                </button>
-              )}
+              <button
+                onClick={() => saveNote(selInfo.iso, obsComment)}
+                className="mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+              >
+                💾 Сохранить заметку
+              </button>
             </div>
 
             {/* Напоминания этого дня */}
