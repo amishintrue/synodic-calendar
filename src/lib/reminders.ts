@@ -5,7 +5,7 @@
 
 /** Часовой пояс приложения. Если у вас другой — поменяйте здесь и один раз
  * заново задеплойте (в drizzle-миграции это не участвует). */
-export const APP_TIMEZONE = "Europe/Moscow";
+export const APP_TIMEZONE = "Asia/Yekaterinburg";
 
 export type ReminderRow = {
   id: number;
