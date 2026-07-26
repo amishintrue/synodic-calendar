@@ -14,8 +14,17 @@ import {
 export const observations = pgTable("observations", {
   id: serial("id").primaryKey(),
   date: date("date", { mode: "string" }).notNull().unique(),
-  comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Произвольная заметка пользователя к конкретному дню (не обязательно
+ * связанному с наблюдением) — например, про погоду или видимость.
+ */
+export const notes = pgTable("notes", {
+  date: date("date", { mode: "string" }).primaryKey(),
+  comment: text("comment").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 /**
