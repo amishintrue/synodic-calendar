@@ -189,6 +189,27 @@ export default function MoonCalendar() {
 
   // Уведомления в браузере, пока сайт открыт: проверяем раз в минуту и
   // учитываем точное время каждого напоминания (а не только день).
+  //
+  // Важно: если на странице зарегистрирован service worker (а он теперь
+  // регистрируется всегда, из-за push-подписки), некоторые браузеры
+  // (в частности Chrome на Android) запрещают вызывать `new Notification()`
+  // напрямую и выбрасывают ошибку — нужно показывать уведомление именно
+  // через registration.showNotification().
+  const showLocalNotification = useCallback(async (body: string) => {
+    try {
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.showNotification("Лунный календарь", { body });
+          return;
+        }
+      }
+      new Notification("Лунный календарь", { body });
+    } catch (err) {
+      console.error("Не удалось показать уведомление:", err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!loaded || typeof window === "undefined" || !("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
@@ -200,7 +221,7 @@ export default function MoonCalendar() {
       if (moonAlert) {
         const key = `moon-notified-${today}`;
         if (!localStorage.getItem(key)) {
-          new Notification("Лунный календарь", { body: moonAlert.text });
+          showLocalNotification(moonAlert.text);
           localStorage.setItem(key, "1");
         }
       }
@@ -208,9 +229,7 @@ export default function MoonCalendar() {
         if (r.time && r.time > hhmm) continue; // время ещё не наступило
         const key = `rem-notified-${r.id}-${today}`;
         if (localStorage.getItem(key)) continue;
-        new Notification("Лунный календарь", {
-          body: `Напоминание: ${r.title}${r.time ? " в " + r.time : ""}`,
-        });
+        showLocalNotification(`Напоминание: ${r.title}${r.time ? " в " + r.time : ""}`);
         localStorage.setItem(key, "1");
       }
     };
@@ -218,7 +237,7 @@ export default function MoonCalendar() {
     check();
     const interval = setInterval(check, 60_000);
     return () => clearInterval(interval);
-  }, [loaded, moonAlert, todaysReminders, today]);
+  }, [loaded, moonAlert, todaysReminders, today, showLocalNotification]);
 
   /* ---------- Сетка месяца ---------- */
   const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
