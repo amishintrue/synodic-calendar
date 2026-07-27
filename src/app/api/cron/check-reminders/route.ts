@@ -22,51 +22,59 @@ export async function GET(req: NextRequest) {
     if (!ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const today = nowInAppTimezone();
-  const sentTitles: string[] = [];
+  try {
+    const today = nowInAppTimezone();
+    const sentTitles: string[] = [];
 
-  // --- Лунное предупреждение (не привязано к конкретному напоминанию) ---
-  const obsRows = await db.select().from(observations);
-  const obsDates = obsRows.map((o) => o.date).sort();
-  const todaySynodic = synodicDayFor(today.dateISO, obsDates);
-  const { y, m, d } = parseISO(today.dateISO);
-  const todayPhase = moonPhaseTrig2(y, m, d);
+    // --- Лунное предупреждение (не привязано к конкретному напоминанию) ---
+    const obsRows = await db.select().from(observations);
+    const obsDates = obsRows.map((o) => o.date).sort();
+    const todaySynodic = synodicDayFor(today.dateISO, obsDates);
+    const { y, m, d } = parseISO(today.dateISO);
+    const todayPhase = moonPhaseTrig2(y, m, d);
 
-  let moonAlertText: string | null = null;
-  if (todaySynodic && todaySynodic.day >= 29) {
-    moonAlertText = `Идёт ${todaySynodic.day}-й день синодического месяца — приближается новый месяц! Понаблюдайте молодую луну сегодня вечером.`;
-  } else if (!todaySynodic && isNewMoon(todayPhase)) {
-    moonAlertText = "Сегодня новолуние (по расчёту). В ближайшие вечера ожидается появление нового месяца.";
-  }
-
-  if (moonAlertText) {
-    const settingRows = await db.select().from(settings).where(eq(settings.key, "lastMoonAlertDate"));
-    const lastSent = settingRows[0]?.value;
-    if (lastSent !== today.dateISO) {
-      await sendPushToAll({ title: "🌑 Лунный календарь", body: moonAlertText });
-      await db
-        .insert(settings)
-        .values({ key: "lastMoonAlertDate", value: today.dateISO })
-        .onConflictDoUpdate({ target: settings.key, set: { value: today.dateISO } });
-      sentTitles.push("moon-alert");
+    let moonAlertText: string | null = null;
+    if (todaySynodic && todaySynodic.day >= 29) {
+      moonAlertText = `Идёт ${todaySynodic.day}-й день синодического месяца — приближается новый месяц! Понаблюдайте молодую луну сегодня вечером.`;
+    } else if (!todaySynodic && isNewMoon(todayPhase)) {
+      moonAlertText = "Сегодня новолуние (по расчёту). В ближайшие вечера ожидается появление нового месяца.";
     }
-  }
 
-  // --- Пользовательские напоминания ---
-  const allReminders = await db.select().from(reminders);
-  for (const r of allReminders) {
-    if (isReminderDueNow(r, today)) {
-      await sendPushToAll({
-        title: "🔔 Напоминание",
-        body: r.time ? `${r.title} (в ${r.time})` : r.title,
-      });
-      await db
-        .update(reminders)
-        .set({ lastNotifiedDate: today.dateISO })
-        .where(eq(reminders.id, r.id));
-      sentTitles.push(r.title);
+    if (moonAlertText) {
+      const settingRows = await db.select().from(settings).where(eq(settings.key, "lastMoonAlertDate"));
+      const lastSent = settingRows[0]?.value;
+      if (lastSent !== today.dateISO) {
+        await sendPushToAll({ title: "🌑 Лунный календарь", body: moonAlertText });
+        await db
+          .insert(settings)
+          .values({ key: "lastMoonAlertDate", value: today.dateISO })
+          .onConflictDoUpdate({ target: settings.key, set: { value: today.dateISO } });
+        sentTitles.push("moon-alert");
+      }
     }
-  }
 
-  return NextResponse.json({ ok: true, checkedAt: today, sent: sentTitles });
+    // --- Пользовательские напоминания ---
+    const allReminders = await db.select().from(reminders);
+    for (const r of allReminders) {
+      if (isReminderDueNow(r, today)) {
+        await sendPushToAll({
+          title: "🔔 Напоминание",
+          body: r.time ? `${r.title} (в ${r.time})` : r.title,
+        });
+        await db
+          .update(reminders)
+          .set({ lastNotifiedDate: today.dateISO })
+          .where(eq(reminders.id, r.id));
+        sentTitles.push(r.title);
+      }
+    }
+
+    return NextResponse.json({ ok: true, checkedAt: today, sent: sentTitles });
+  } catch (err) {
+    // Возвращаем текст ошибки в ответе — так его видно прямо в "Детали"
+    // на cron-job.org, без необходимости лезть в логи Vercel.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("check-reminders failed:", err);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
 }
