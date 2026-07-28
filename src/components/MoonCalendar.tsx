@@ -73,6 +73,10 @@ function MoonIcon({ moonDay, size = 34 }: { moonDay: number; size?: number }) {
 }
 
 export default function MoonCalendar() {
+  // "Тик" не используется напрямую — только чтобы форсировать перерасчёт
+  // today/t при возврате в приложение (см. эффект ниже).
+  const [, forceRerender] = useState(0);
+
   const today = todayISO();
   const t = parseISO(today);
 
@@ -117,6 +121,24 @@ export default function MoonCalendar() {
     if (s.weekStart === "monday" || s.weekStart === "sunday") setWeekStart(s.weekStart);
     setNotes(await notesRes.json());
     setLoaded(true);
+  }, []);
+
+  // Когда PWA "разбужена" из фонового состояния (свернули/вернулись,
+  // сменился день, пока вкладка была заморожена) — форсируем повторный
+  // рендер, чтобы today/t пересчитались от актуальной даты, а не остались
+  // от момента последней перерисовки.
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState === "visible") forceRerender((v) => v + 1);
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener("pageshow", wake);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("pageshow", wake);
+    };
   }, []);
 
   useEffect(() => {
