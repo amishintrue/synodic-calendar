@@ -73,15 +73,21 @@ function MoonIcon({ moonDay, size = 34 }: { moonDay: number; size?: number }) {
 }
 
 export default function MoonCalendar() {
-  // "Тик" не используется напрямую — только чтобы форсировать перерасчёт
-  // today/t при возврате в приложение (см. эффект ниже).
-  const [, forceRerender] = useState(0);
+  // Какой месяц открыт по умолчанию. Берём ленивым инициализатором, чтобы
+  // на клиенте это было реальное «сегодня» (на сервере/при сборке — дата
+  // сборки, что влияет лишь на изначально открытый месяц, не на подсветку).
+  const [viewYear, setViewYear] = useState<number>(() => parseISO(todayISO()).y);
+  const [viewMonth, setViewMonth] = useState<number>(() => parseISO(todayISO()).m); // 1..12
 
-  const today = todayISO();
-  const t = parseISO(today);
-
-  const [viewYear, setViewYear] = useState(t.y);
-  const [viewMonth, setViewMonth] = useState(t.m); // 1..12
+  // «Сегодня» вычисляем ТОЛЬКО на клиенте и только после монтирования.
+  // Страница строится статически (нет export const dynamic), поэтому при
+  // пререндере вызов new Date() «замораживается» на дату сборки/деплоя —
+  // и рамка текущего дня оставалась от даты последнего деплоя, а не от
+  // реального сегодняшнего числа. null во время SSR и первого рендера =>
+  // подсветки ещё нет (и нет рассинхрона с серверным HTML), а после
+  // монтирования берём актуальную дату из клиентских часов.
+  const [today, setToday] = useState<string | null>(null);
+  const t = today ? parseISO(today) : null;
   const [observations, setObservations] = useState<Observation[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -123,18 +129,21 @@ export default function MoonCalendar() {
     setLoaded(true);
   }, []);
 
-  // Когда PWA "разбужена" из фонового состояния (свернули/вернулись,
-  // сменился день, пока вкладка была заморожена) — форсируем повторный
-  // рендер, чтобы today/t пересчитались от актуальной даты, а не остались
-  // от момента последней перерисовки.
+  // «Сегодня» держим актуальным: обновляем раз в минуту (чтобы рамка
+  // переехала на новый день в полночь, даже если вкладка всё время открыта)
+  // и дополнительно — при возвращении в приложение из фона.
   useEffect(() => {
+    const update = () => setToday(todayISO());
+    update();
+    const interval = setInterval(update, 60_000);
     const wake = () => {
-      if (document.visibilityState === "visible") forceRerender((v) => v + 1);
+      if (document.visibilityState === "visible") update();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
     window.addEventListener("pageshow", wake);
     return () => {
+      clearInterval(interval);
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("focus", wake);
       window.removeEventListener("pageshow", wake);
@@ -177,17 +186,17 @@ export default function MoonCalendar() {
   // Предстоящие и прошедшие одноразовые напоминания — прошедшие скрываем
   // по умолчанию, чтобы список не захламлялся.
   const upcomingReminders = useMemo(
-    () => reminders.filter((r) => !(r.kind === "date" && r.date && r.date < today)),
+    () => reminders.filter((r) => !(today && r.kind === "date" && r.date && r.date < today)),
     [reminders, today]
   );
   const pastReminders = useMemo(
-    () => reminders.filter((r) => r.kind === "date" && r.date && r.date < today),
+    () => reminders.filter((r) => today && r.kind === "date" && r.date && r.date < today),
     [reminders, today]
   );
 
   /* ---------- Уведомления о приближении нового месяца ---------- */
-  const todaySynodic = synodicDayFor(today, obsDates);
-  const todayPhase = moonPhaseTrig2(t.y, t.m, t.d);
+  const todaySynodic = today ? synodicDayFor(today, obsDates) : null;
+  const todayPhase = t ? moonPhaseTrig2(t.y, t.m, t.d) : 0;
 
   let moonAlert: { text: string; kind: "warn" | "info" } | null = null;
   if (todaySynodic && todaySynodic.day >= 29) {
@@ -203,6 +212,7 @@ export default function MoonCalendar() {
   }
 
   const todaysReminders = useMemo(() => {
+    if (!today) return [];
     const wd = weekdayOfISO(today);
     return reminders.filter(
       (r) => (r.kind === "date" && r.date === today) || (r.kind === "weekly" && r.weekday === wd)
@@ -355,7 +365,7 @@ export default function MoonCalendar() {
     setEditingReminderId(r.id);
     setEditTitle(r.title);
     setEditKind(r.kind);
-    setEditDate(r.date ?? today);
+    setEditDate(r.date ?? today ?? "");
     setEditWeekday(r.weekday ?? 0);
     setEditTime(r.time ?? "");
   };
@@ -556,7 +566,7 @@ export default function MoonCalendar() {
             {MONTHS[viewMonth - 1]} {viewYear}
           </span>
           <button
-            onClick={() => { setViewYear(t.y); setViewMonth(t.m); }}
+            onClick={() => { if (t) { setViewYear(t.y); setViewMonth(t.m); } }}
             className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:bg-slate-800"
           >
             Сегодня
@@ -588,7 +598,7 @@ export default function MoonCalendar() {
           const syn = synodicDayFor(iso, obsDates);
           const isObs = obsDates.includes(iso);
           const isFirstSyn = syn?.day === 1;
-          const isToday = iso === today;
+          const isToday = !!today && iso === today;
           const rems = remindersFor(iso);
 
           const dayComment = notesByDate.get(iso)?.comment ?? null;
