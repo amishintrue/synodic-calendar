@@ -40,3 +40,6 @@ coverage/
 *.temp
 build-android.bat
 app-debug.apk
+IDEA.md
+drizzle.config.json
+

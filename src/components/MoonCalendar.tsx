@@ -40,6 +40,13 @@ import {
 } from "@/lib/local-notifications";
 import NoteEditor, { NoteEditorHandle } from "@/components/NoteEditor";
 import BatteryOptimizationGuide from "@/components/BatteryOptimizationGuide";
+import {
+  getUserLocation,
+  getSunMoonTimes,
+  localNoonForDate,
+  formatTime,
+  type LocationResult,
+} from "@/lib/sun-moon";
 
 type Observation = { id: number; date: string };
 type Note = { date: string; comment: string };
@@ -143,6 +150,12 @@ export default function MoonCalendar() {
   // поле settings.lastMoonAlertDate, раньше оно гасило push, теперь гасит
   // модалку на сегодня.
   const [moonAlertAckDate, setMoonAlertAckDate] = useState<string>("");
+
+  // Местоположение пользователя для восхода/захода Солнца и Луны в модалке
+  // сегодняшнего дня. Определяется один раз за сессию (через
+  // @capacitor/geolocation, с запасным вариантом — Иерусалим, если
+  // геолокация отключена/недоступна).
+  const [location, setLocation] = useState<LocationResult | null>(null);
 
   // Форма напоминания
   const [remTitle, setRemTitle] = useState("");
@@ -277,6 +290,23 @@ export default function MoonCalendar() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadAll, refreshNotificationHealth]);
+
+  // Определяем местоположение при первом открытии модалки дня, а не сразу
+  // при запуске приложения — геолокация нужна только для восхода/захода,
+  // который виден только внутри этой модалки, так что не просим разрешение
+  // раньше, чем оно реально понадобится пользователю. getUserLocation()
+  // сама кэширует результат на сессию, так что при повторных открытиях
+  // модалки повторного запроса к ОС не будет.
+  useEffect(() => {
+    if (!selected || location) return;
+    let cancelled = false;
+    getUserLocation().then((loc) => {
+      if (!cancelled) setLocation(loc);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, location]);
 
   const obsDates = useMemo(
     () => observations.map((o) => o.date).sort(),
@@ -778,6 +808,19 @@ export default function MoonCalendar() {
       }
     : null;
 
+  // Восход/закат Солнца и Луны — для дня, открытого в модалке (любого, не
+  // только сегодняшнего). Координаты берём с устройства (см. эффект выше),
+  // а сам момент для расчёта — полдень ВЫБРАННОГО дня (см. localNoonForDate
+  // в lib/sun-moon.ts), а не "сейчас": иначе для прошлых/будущих дат
+  // считалось бы неверное время.
+  const isSelectedToday = !!selInfo && !!today && selInfo.iso === today;
+  const selectedAstro = useMemo(() => {
+    if (!selInfo || !location) return null;
+    const noon = localNoonForDate(selInfo.p.y, selInfo.p.m, selInfo.p.d);
+    return getSunMoonTimes(noon, location.coords);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selInfo?.iso, location]);
+
   return (
     <div className="mx-auto max-w-3xl px-2 pb-16 pt-4 sm:px-4">
       {/* Заголовок */}
@@ -1080,6 +1123,66 @@ export default function MoonCalendar() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Восход/закат Солнца и Луны — для выбранного дня (любого, не
+                только сегодняшнего), по геолокации устройства (либо
+                Иерусалим по умолчанию, если геолокация недоступна). */}
+            <div className="mb-3 rounded-xl border border-slate-700 bg-slate-800/40 p-3">
+              <h4 className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-bold uppercase text-slate-400">
+                🌍 Восход и закат{isSelectedToday ? " сегодня" : ""}
+                {location?.source === "jerusalem" && (
+                  <span
+                    className="normal-case font-normal text-amber-400"
+                    title="Геолокация отключена или недоступна — используются координаты Иерусалима"
+                  >
+                    (Иерусалим — по умолчанию)
+                  </span>
+                )}
+              </h4>
+              {!location ? (
+                <p className="text-xs text-slate-500">Определяем местоположение…</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 text-sm text-slate-200">
+                  <div className="rounded-lg bg-black/30 p-2">
+                    <div className="text-[11px] text-slate-400">☀️ Восход солнца</div>
+                    <div className="font-semibold">
+                      {formatTime(selectedAstro?.sunrise ?? null, location.timeZone)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-black/30 p-2">
+                    <div className="text-[11px] text-slate-400">🌇 Закат солнца</div>
+                    <div className="font-semibold">
+                      {formatTime(selectedAstro?.sunset ?? null, location.timeZone)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-black/30 p-2">
+                    <div className="text-[11px] text-slate-400">🌙 Восход луны</div>
+                    <div className="font-semibold">
+                      {selectedAstro?.moonAlwaysUp
+                        ? "не заходит"
+                        : selectedAstro?.moonAlwaysDown
+                          ? "не восходит"
+                          : formatTime(selectedAstro?.moonrise ?? null, location.timeZone)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-black/30 p-2">
+                    <div className="text-[11px] text-slate-400">🌑 Заход луны</div>
+                    <div className="font-semibold">
+                      {selectedAstro?.moonAlwaysUp
+                        ? "не заходит"
+                        : selectedAstro?.moonAlwaysDown
+                          ? "не восходит"
+                          : formatTime(selectedAstro?.moonset ?? null, location.timeZone)}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-slate-500">
+                {location?.source === "device"
+                  ? "По текущей геолокации устройства."
+                  : "Геолокация отключена или недоступна — показано время для Иерусалима."}
+              </p>
             </div>
 
             <button

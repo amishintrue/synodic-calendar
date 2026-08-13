@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Геолокация для восхода/захода Солнца и Луны в модалке дня.
+         ACCESS_COARSE_LOCATION — приблизительное положение, этого достаточно
+         для расчёта времени восхода/захода (точность до города).
+         ACCESS_FINE_LOCATION запрашивается опционально: если пользователь
+         выдаст только приблизительное разрешение, приложение всё равно
+         продолжит работать. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -43,14 +51,7 @@
           AndroidManifest.xml внутри .aar (receiver TimedNotificationPublisher
           для показа по будильнику, receiver для восстановления после
           перезагрузки, receiver для снятия уведомления по свайпу) — Gradle
-          сам сливает его в финальный манифест при сборке. Ранее здесь были
-          вручную прописаны <receiver android:name="...LocalNotificationBroadcastReceiver">
-          и <service android:name="...LocalNotificationService"> — таких
-          классов в реальном плагине нет (настоящий получатель будильника
-          называется com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher
-          и объявляется автоматически). Эти две строки были лишними и
-          удалены — они не помогали и не мешали доставке, но их отсутствие
-          снижает риск ClassNotFoundException при обработке BOOT_COMPLETED.
+          сам сливает его в финальный манифест при сборке.
         -->
     </application>
 </manifest>

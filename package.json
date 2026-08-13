@@ -16,6 +16,7 @@
     "@capacitor/core": "^8.4.2",
     "@capacitor/device": "^8.0.3",
     "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/geolocation": "^8.2.2",
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/keyboard": "^8.0.5",
     "@capacitor/local-notifications": "^8.2.1",
@@ -27,6 +28,7 @@
     "pg": "8.20.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "suncalc": "^2.0.1",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "@types/pg": "8.18.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/suncalc": "^1.9.2",
     "@types/web-push": "^3.6.4",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
