@@ -388,20 +388,50 @@ export default function MoonCalendar() {
   );
 
   /* ---------- Действия ---------- */
-  const navigate = (delta: number) => {
-    let m = viewMonth + delta;
-    let y = viewYear;
-    if (m < 1) {
-      m = 12;
-      y--;
-    }
-    if (m > 12) {
-      m = 1;
-      y++;
-    }
-    setViewMonth(m);
-    setViewYear(y);
-  };
+    const navigate = (delta: number) => {
+      let m = viewMonth + delta;
+      let y = viewYear;
+      if (m < 1) {
+        m = 12;
+        y--;
+      }
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
+      setViewMonth(m);
+      setViewYear(y);
+    };
+
+    /* ---------- Свайп для смены месяца ---------- */
+    const calendarGridRef = useRef<HTMLDivElement>(null);
+    const [swipeStartX, setSwipeStartX] = useState(0);
+    const [swipeEndX, setSwipeEndX] = useState(0);
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+      if (e.touches.length === 1) {
+        setSwipeStartX(e.touches[0].clientX);
+      }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+      if (e.touches.length === 1) {
+        setSwipeEndX(e.touches[0].clientX);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      const diff = swipeStartX - swipeEndX;
+      const threshold = 50; // минимальное расстояние свайпа
+
+      if (Math.abs(diff) > threshold) {
+        if (diff > 0) {
+          navigate(1); // свайп влево → следующий месяц
+        } else {
+          navigate(-1); // свайп вправо → предыдущий месяц
+        }
+      }
+    };
 
   const handleToggleWeekStart = async () => {
     const next = await toggleWeekStart(weekStart);
@@ -968,7 +998,12 @@ export default function MoonCalendar() {
       </div>
 
       {/* Сетка */}
-      <div className="grid grid-cols-7 gap-1">
+            <div
+              className="relative grid grid-cols-7 gap-1"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
         {cells.map((iso, idx) => {
           if (!iso)
             return (
@@ -1130,7 +1165,7 @@ export default function MoonCalendar() {
                 Иерусалим по умолчанию, если геолокация недоступна). */}
             <div className="mb-3 rounded-xl border border-slate-700 bg-slate-800/40 p-3">
               <h4 className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-bold uppercase text-slate-400">
-                🌍 Восход и закат{isSelectedToday ? " сегодня" : ""}
+                Восход и закат{isSelectedToday ? " сегодня" : ""}
                 {location?.source === "jerusalem" && (
                   <span
                     className="normal-case font-normal text-amber-400"
