@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Capacitor build output
+android/app/build/
+android/app/capacitor-cordova-android-plugins/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.production.local
+.env.development.local
+
+# Test coverage
+coverage/
+
+# Misc
+*.bak
+*.tmp
+*.temp
+build-android.bat
+app-debug.apk
