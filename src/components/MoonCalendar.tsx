@@ -225,14 +225,15 @@ export default function MoonCalendar() {
   // Hardware back button handling
   useEffect(() => {
     const handleBackButton = () => {
+      // Если редактируется напоминание (в т.ч. прямо внутри модалки дня) —
+      // сначала отменяем редактирование, а не закрываем всю модалку разом.
+      if (editingReminderId !== null) {
+        setEditingReminderId(null);
+        return;
+      }
       // Если открыто модальное окно дня — закрываем его
       if (selected) {
         setSelected(null);
-        return;
-      }
-      // Если редактируется напоминание — отменяем редактирование
-      if (editingReminderId !== null) {
-        setEditingReminderId(null);
         return;
       }
       // Иначе сворачиваем приложение
@@ -251,11 +252,11 @@ export default function MoonCalendar() {
 
     const handlePopState = (e: PopStateEvent) => {
       e.preventDefault();
-      if (selected) {
-        setSelected(null);
-        history.pushState(null, "", window.location.href);
-      } else if (editingReminderId !== null) {
+      if (editingReminderId !== null) {
         setEditingReminderId(null);
+        history.pushState(null, "", window.location.href);
+      } else if (selected) {
+        setSelected(null);
         history.pushState(null, "", window.location.href);
       }
     };
@@ -403,33 +404,48 @@ export default function MoonCalendar() {
       setViewYear(y);
     };
 
-    /* ---------- Свайп для смены месяца ---------- */
-    const calendarGridRef = useRef<HTMLDivElement>(null);
-    const [swipeStartX, setSwipeStartX] = useState(0);
-    const [swipeEndX, setSwipeEndX] = useState(0);
+    /* ---------- Свайп для смены месяца ----------
+     * ВАЖНО: старая версия хранила X-координаты в useState и брала
+     * swipeEndX из onTouchMove. На обычном тапе (например, по дню
+     * календаря) палец почти не двигается, поэтому touchmove мог вообще
+     * не сработать — swipeEndX оставался "протухшим" от предыдущего
+     * жеста (а при самом первом тапе — вообще 0), и на touchEnd diff
+     * получался огромным, что ложно триггерило navigate(). Из-за этого
+     * при обычном тапе по дню менялся месяц в сетке позади модалки.
+     *
+     * Исправление: используем ref (без лишних ре-рендеров на каждый
+     * touchmove) и считаем итоговый сдвиг прямо в touchend по
+     * changedTouches — без промежуточного состояния, которое могло не
+     * обновиться. Плюс отсекаем вертикальный скролл (когда dy больше dx).
+     */
+    const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
     const handleTouchStart = (e: React.TouchEvent) => {
-      if (e.touches.length === 1) {
-        setSwipeStartX(e.touches[0].clientX);
-      }
+      const touch = e.touches[0];
+      touchStartRef.current =
+        e.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : null;
     };
 
-    const handleTouchMove = (e: React.TouchEvent) => {
-      if (e.touches.length === 1) {
-        setSwipeEndX(e.touches[0].clientX);
-      }
-    };
+    const handleTouchEnd = (e: React.TouchEvent) => {
+      const start = touchStartRef.current;
+      touchStartRef.current = null;
+      if (!start) return;
 
-    const handleTouchEnd = () => {
-      const diff = swipeStartX - swipeEndX;
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+
+      const dx = start.x - touch.clientX;
+      const dy = start.y - touch.clientY;
       const threshold = 50; // минимальное расстояние свайпа
 
-      if (Math.abs(diff) > threshold) {
-        if (diff > 0) {
-          navigate(1); // свайп влево → следующий месяц
-        } else {
-          navigate(-1); // свайп вправо → предыдущий месяц
-        }
+      // Обычный тап (почти не сдвинулись) или вертикальный скролл —
+      // это не свайп месяца, ничего не делаем.
+      if (Math.abs(dx) < threshold || Math.abs(dx) < Math.abs(dy)) return;
+
+      if (dx > 0) {
+        navigate(1); // свайп влево → следующий месяц
+      } else {
+        navigate(-1); // свайп вправо → предыдущий месяц
       }
     };
 
@@ -506,7 +522,10 @@ export default function MoonCalendar() {
     setEditingReminderId(r.id);
     setEditTitle(r.title);
     setEditKind(r.kind);
-    setEditDate(r.date ?? today ?? "");
+    // Если сейчас открыта модалка дня — по умолчанию подставляем ЕЁ дату
+    // (а не сегодняшнюю): так переключение "еженедельно" → "на дату" из
+    // модалки конкретного дня даёт ожидаемый результат.
+    setEditDate(r.date ?? selected ?? today ?? "");
     setEditWeekday(r.weekday ?? 0);
     setEditTime(r.time ?? "");
   };
@@ -827,6 +846,14 @@ export default function MoonCalendar() {
     );
   };
 
+  const closeDayModal = () => {
+    setSelected(null);
+    // Если внутри модалки было открыто редактирование напоминания —
+    // закрываем и его, иначе форма редактирования "зависнет" открытой в
+    // фоновом списке напоминаний под модалкой.
+    setEditingReminderId(null);
+  };
+
   const selInfo = selected
     ? {
         iso: selected,
@@ -1001,7 +1028,6 @@ export default function MoonCalendar() {
             <div
               className="relative grid grid-cols-7 gap-1"
               onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
             >
         {cells.map((iso, idx) => {
@@ -1113,7 +1139,7 @@ export default function MoonCalendar() {
       {selInfo && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4"
-          onClick={() => setSelected(null)}
+          onClick={closeDayModal}
         >
           <div
             className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-700 bg-slate-900 p-4 sm:rounded-2xl"
@@ -1129,7 +1155,7 @@ export default function MoonCalendar() {
                 </p>
               </div>
               <button
-                onClick={() => setSelected(null)}
+                onClick={closeDayModal}
                 className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800"
               >
                 ✕
@@ -1247,33 +1273,15 @@ export default function MoonCalendar() {
               onSave={handleSaveNote}
             />
 
-            {/* Напоминания этого дня */}
+            {/* Напоминания этого дня — тот же renderReminderRow, что и в
+                общем списке снизу, так что редактирование (✏️) работает
+                прямо здесь, в модалке дня, а не только в общем списке. */}
             {selInfo.rems.length > 0 && (
               <div className="mb-3">
                 <h4 className="mb-1.5 text-xs font-bold uppercase text-slate-400">
                   Напоминания в этот день
                 </h4>
-                <ul className="space-y-1">
-                  {selInfo.rems.map((r) => (
-                    <li
-                      key={r.id}
-                      className="flex items-center justify-between rounded-lg bg-slate-800/60 px-3 py-1.5 text-sm text-slate-200"
-                    >
-                      <span>
-                        {r.title}
-                        <span className="ml-1 text-xs text-slate-400">
-                          {r.kind === "weekly" ? "(еженедельно)" : ""} {r.time ?? ""}
-                        </span>
-                      </span>
-                      <button
-                        onClick={() => handleDeleteReminder(r.id)}
-                        className="text-xs text-rose-400"
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <ul className="space-y-1.5">{selInfo.rems.map((r) => renderReminderRow(r))}</ul>
               </div>
             )}
 
