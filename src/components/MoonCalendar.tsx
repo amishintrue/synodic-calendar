@@ -729,7 +729,9 @@ export default function MoonCalendar() {
             className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
             autoCorrect="on"
             autoCapitalize="sentences"
-            spellCheck={false}
+            // spellCheck не отключаем: spellcheck="false" в Android WebView
+            // мапится в TYPE_TEXT_FLAG_NO_SUGGESTIONS, из-за чего часть
+            // клавиатур перестаёт переключать язык.
           />
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
             <label
@@ -1301,7 +1303,9 @@ export default function MoonCalendar() {
                 className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-sky-500"
                 autoCorrect="on"
                 autoCapitalize="sentences"
-                spellCheck={false}
+                // spellCheck не отключаем: spellcheck="false" в Android WebView
+                // мапится в TYPE_TEXT_FLAG_NO_SUGGESTIONS, из-за чего часть
+                // клавиатур перестаёт переключать язык.
                 enterKeyHint="next"
               />
               <div className="mb-2 flex flex-wrap gap-2 text-xs">
