@@ -825,7 +825,9 @@ export default function MoonCalendar() {
             {r.kind === "date"
               ? `📅 ${r.date?.split("-").reverse().join(".")}`
               : `🔁 каждый(-ую) ${WEEKDAYS_FULL[r.weekday ?? 0].toLowerCase()}`}
-            {r.time ? ` · ${r.time}` : ""}
+            {r.time && (
+              <> · <span className="text-amber-400">{r.time}</span></>
+            )}
           </span>
         </span>
         <span className="flex shrink-0 gap-1">
@@ -970,13 +972,13 @@ export default function MoonCalendar() {
         </div>
       )}
       {todaysReminders.length > 0 && (
-        <div className="mb-3 rounded-xl border border-violet-500/50 bg-violet-500/10 px-4 py-3 text-sm text-violet-200">
-          🔔 Сегодня:{" "}
-          {todaysReminders
-            .map((r) => r.title + (r.time ? ` (${r.time})` : ""))
-            .join("; ")}
-        </div>
-      )}
+                    <div className="mb-3 rounded-xl border border-violet-500/50 bg-violet-500/10 px-4 py-3 text-sm text-violet-200">
+                      🔔 Сегодня:{" "}
+                      {todaysReminders
+                        .map((r) => r.title + (r.time ? ` (${r.time})` : ""))
+                        .join("; ")}
+                    </div>
+                  )}
 
       <div className="mb-2 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-2 py-2">
         <button
