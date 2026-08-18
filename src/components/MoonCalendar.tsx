@@ -728,9 +728,9 @@ export default function MoonCalendar() {
             onKeyDown={handleEditTitleKeyDown}
             className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
             autoCorrect="on"
-            autoCapitalize="sentences"
-            spellCheck={false}
-          />
+                        autoCapitalize="sentences"
+                        spellCheck={true}
+                      />
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
             <label
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 ${
@@ -1300,9 +1300,9 @@ export default function MoonCalendar() {
                 placeholder="Текст напоминания…"
                 className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-sky-500"
                 autoCorrect="on"
-                autoCapitalize="sentences"
-                spellCheck={false}
-                enterKeyHint="next"
+                                autoCapitalize="sentences"
+                                spellCheck={true}
+                                enterKeyHint="next"
               />
               <div className="mb-2 flex flex-wrap gap-2 text-xs">
                 <label
