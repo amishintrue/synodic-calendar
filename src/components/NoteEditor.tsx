@@ -104,10 +104,6 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
           rows={3}
           autoCorrect="on"
           autoCapitalize="sentences"
-          // spellCheck НЕ отключаем: spellcheck="false" в Android WebView
-          // мапится в TYPE_TEXT_FLAG_NO_SUGGESTIONS, из-за чего часть
-          // клавиатур (например, «Gboard + Emoji & Font») перестаёт
-          // переключать язык на русский.
           enterKeyHint="done"
           inputMode="text"
           className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-sky-500"
