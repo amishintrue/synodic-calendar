@@ -38,6 +38,8 @@ export interface Settings {
   lastMoonAlertDate: string;
   /** '1', если пользователь нажал «Готово, настроил(а)» в подсказке по батарее/автозапуску. */
   batteryOptimizationDismissed: string;
+  /** Режим отображения календарной сетки: григорианский месяц или библейский. */
+  calendarMode: 'gregorian' | 'biblical';
 }
 
 // Converters
@@ -188,11 +190,17 @@ export async function getSettings(): Promise<Settings> {
     appTimezone: rows.appTimezone || 'Asia/Yekaterinburg',
     lastMoonAlertDate: rows.lastMoonAlertDate || '',
     batteryOptimizationDismissed: rows.batteryOptimizationDismissed || '',
+    calendarMode: rows.calendarMode === 'biblical' ? 'biblical' : 'gregorian',
   };
 }
 
 export async function setSetting(
-  key: 'weekStart' | 'appTimezone' | 'lastMoonAlertDate' | 'batteryOptimizationDismissed',
+  key:
+    | 'weekStart'
+    | 'appTimezone'
+    | 'lastMoonAlertDate'
+    | 'batteryOptimizationDismissed'
+    | 'calendarMode',
   value: string
 ): Promise<void> {
   await initializeDatabase();
@@ -202,5 +210,13 @@ export async function setSetting(
 export async function toggleWeekStart(current: 'sunday' | 'monday'): Promise<'sunday' | 'monday'> {
   const next = current === 'sunday' ? 'monday' : 'sunday';
   await setSetting('weekStart', next);
+  return next;
+}
+
+export async function toggleCalendarMode(
+  current: 'gregorian' | 'biblical'
+): Promise<'gregorian' | 'biblical'> {
+  const next = current === 'gregorian' ? 'biblical' : 'gregorian';
+  await setSetting('calendarMode', next);
   return next;
 }

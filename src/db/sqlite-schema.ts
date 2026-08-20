@@ -55,4 +55,5 @@ export const INITIAL_SETTINGS = [
   { key: 'weekStart', value: 'sunday' },
   { key: 'appTimezone', value: 'Asia/Yekaterinburg' },
   { key: 'lastMoonAlertDate', value: '' },
+  { key: 'calendarMode', value: 'gregorian' },
 ];

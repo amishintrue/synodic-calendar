@@ -28,8 +28,15 @@ import {
   getSettings,
   setSetting,
   toggleWeekStart,
+  toggleCalendarMode,
   rescheduleAllReminders,
 } from "@/lib/data-service";
+import {
+  buildBiblicalMonths,
+  findBiblicalMonthFor,
+  type BiblicalMonth,
+} from "@/lib/biblical-calendar";
+import { jerusalemYMD, MS_PER_DAY } from "@/lib/biblical-astro";
 import {
   initializeNotifications,
   requestNotificationPermission,
@@ -50,6 +57,10 @@ import {
 
 type Observation = { id: number; date: string };
 type Note = { date: string; comment: string };
+/** Одна ячейка календарной сетки: либо реальный день (с числом для подписи
+ * в углу — григорианским днём месяца или номером дня библейского месяца),
+ * либо `null` для пустой клетки-заполнителя. */
+type GridCell = { iso: string; dayLabel: number } | null;
 type Reminder = {
   id: number;
   title: string;
@@ -134,6 +145,19 @@ export default function MoonCalendar() {
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
+  // Режим календарной сетки: григорианский (как раньше) или библейский
+  // (сетка перестраивается под текущий синодический месяц библейского года).
+  const [calendarMode, setCalendarMode] = useState<"gregorian" | "biblical">("gregorian");
+  // Последовательность библейских месяцев считается один раз за сессию —
+  // это довольно тяжёлые астрономические вычисления (поиск соединений,
+  // заката/захода луны в Иерусалиме для ~6 лет), поэтому уводим их в
+  // отдельный тик, чтобы не блокировать первую отрисовку календаря.
+  const [biblicalMonths, setBiblicalMonths] = useState<BiblicalMonth[]>([]);
+  const [biblicalReady, setBiblicalReady] = useState(false);
+  // Индекс просматриваемого месяца внутри biblicalMonths (используется
+  // только в библейском режиме сетки — навигация ‹ › двигает этот индекс).
+  const [viewedBiblicalIndex, setViewedBiblicalIndex] = useState<number | null>(null);
+
   // Здоровье системы уведомлений (разрешение / точные будильники / батарея) —
   // на этом строится колокольчик: виден, только пока что-то не в порядке.
   const [notifHealth, setNotifHealth] = useState<{
@@ -196,6 +220,7 @@ export default function MoonCalendar() {
       setNotes(notesData);
       setMoonAlertAckDate(settings.lastMoonAlertDate || "");
       setBatteryDismissed(settings.batteryOptimizationDismissed === "1");
+      setCalendarMode(settings.calendarMode === "biblical" ? "biblical" : "gregorian");
       setLoaded(true);
     } catch (error) {
       console.error("Failed to load data:", error);
@@ -292,6 +317,46 @@ export default function MoonCalendar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadAll, refreshNotificationHealth]);
 
+  // Строим последовательность библейских месяцев (±3 года от момента
+  // запуска приложения) один раз за сессию. Расчёт полностью автономный
+  // (не зависит от отметок наблюдения пользователя, см. lib/biblical-calendar.ts)
+  // и не блокирует первую отрисовку — запускается в отдельном тике.
+  useEffect(() => {
+    let cancelled = false;
+    const now = new Date();
+    const rangeStart = new Date(now.getTime() - 3 * 365 * 24 * 3600 * 1000);
+    const rangeEnd = new Date(now.getTime() + 3 * 365 * 24 * 3600 * 1000);
+    const timer = setTimeout(() => {
+      try {
+        const months = buildBiblicalMonths(rangeStart, rangeEnd);
+        if (!cancelled) setBiblicalMonths(months);
+      } catch (error) {
+        console.error("Failed to build biblical months:", error);
+      } finally {
+        if (!cancelled) setBiblicalReady(true);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Как только библейские месяцы посчитаны и известно "сегодня" — ставим
+  // просматриваемый месяц на тот, что содержит сегодняшний день (только
+  // если пользователь ещё не листал библейскую сетку).
+  useEffect(() => {
+    if (!biblicalReady || !today || viewedBiblicalIndex !== null) return;
+    const { y, m, d } = parseISO(today);
+    const noon = new Date(y, m - 1, d, 12, 0, 0, 0);
+    const idx = biblicalMonths.findIndex(
+      (bm) => noon.getTime() >= bm.start.getTime() && noon.getTime() < bm.end.getTime()
+    );
+    if (idx >= 0) setViewedBiblicalIndex(idx);
+    else if (biblicalMonths.length > 0) setViewedBiblicalIndex(biblicalMonths.length - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [biblicalReady, today]);
+
   // Определяем местоположение при первом открытии модалки дня, а не сразу
   // при запуске приложения — геолокация нужна только для восхода/захода,
   // который виден только внутри этой модалки, так что не просим разрешение
@@ -366,15 +431,49 @@ export default function MoonCalendar() {
   }, [reminders, today]);
 
   /* ---------- Сетка месяца ---------- */
-  const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
-  const firstWd = weekdayOfISO(toISO(viewYear, viewMonth, 1)); // 0=Вс
-  const startOffset = weekStart === "sunday" ? firstWd : (firstWd + 6) % 7;
   const weekdayOrder = weekStart === "sunday" ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 0];
 
-  const cells: (string | null)[] = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(toISO(viewYear, viewMonth, d));
-  while (cells.length % 7 !== 0) cells.push(null);
+  // Просматриваемый библейский месяц (только для режима "Библейский").
+  // Индексация в biblicalMonths стабильна между рендерами, поэтому это
+  // безопасно использовать напрямую, без отдельного useMemo.
+  const viewedBiblicalMonth: BiblicalMonth | null =
+    calendarMode === "biblical" && viewedBiblicalIndex !== null
+      ? biblicalMonths[viewedBiblicalIndex] ?? null
+      : null;
+
+  const cells: GridCell[] = [];
+  if (calendarMode === "biblical") {
+    if (viewedBiblicalMonth) {
+      // Месяц начинается закатом (см. biblicalDayStart) — дневная часть
+      // этих суток приходится на СЛЕДУЮЩИЙ гражданский день. Тот же приём
+      // уже используется для отметок наблюдения: firstDay = observation+1
+      // (см. synodicDayFor в lib/moon.ts), так что нумерация дней и
+      // подсветка "первого дня" остаются согласованными между режимами.
+      const startYmd = jerusalemYMD(viewedBiblicalMonth.start);
+      const day1ISO = addDaysISO(toISO(startYmd.y, startYmd.m, startYmd.d), 1);
+      const lengthDays = Math.round(
+        (viewedBiblicalMonth.end.getTime() - viewedBiblicalMonth.start.getTime()) / MS_PER_DAY
+      );
+      const firstWd = weekdayOfISO(day1ISO);
+      const startOffset = weekStart === "sunday" ? firstWd : (firstWd + 6) % 7;
+
+      for (let i = 0; i < startOffset; i++) cells.push(null);
+      for (let n = 0; n < lengthDays; n++) {
+        cells.push({ iso: addDaysISO(day1ISO, n), dayLabel: n + 1 });
+      }
+      while (cells.length % 7 !== 0) cells.push(null);
+    }
+  } else {
+    const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
+    const firstWd = weekdayOfISO(toISO(viewYear, viewMonth, 1)); // 0=Вс
+    const startOffset = weekStart === "sunday" ? firstWd : (firstWd + 6) % 7;
+
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({ iso: toISO(viewYear, viewMonth, d), dayLabel: d });
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+  }
 
   const remindersFor = useCallback(
     (iso: string) => {
@@ -388,8 +487,24 @@ export default function MoonCalendar() {
     [reminders]
   );
 
+  // Номер библейского месяца (1..12, изредка 13 — Адар II) для произвольной
+  // календарной даты. Полностью автоматический расчёт (см.
+  // lib/biblical-calendar.ts) — не связан с ручными отметками наблюдения.
+  const biblicalMonthNumberFor = useCallback(
+    (iso: string): { number: number; isLeap: boolean } | null => {
+      if (!biblicalReady || biblicalMonths.length === 0) return null;
+      const { y, m, d } = parseISO(iso);
+      // Локальный полдень — безопасная точка отсчёта, не задевающая границу
+      // библейских суток (см. аналогичный приём в lib/sun-moon.ts).
+      const noon = new Date(y, m - 1, d, 12, 0, 0, 0);
+      const month = findBiblicalMonthFor(biblicalMonths, noon);
+      return month ? { number: month.number, isLeap: month.isLeap } : null;
+    },
+    [biblicalMonths, biblicalReady]
+  );
+
   /* ---------- Действия ---------- */
-    const navigate = (delta: number) => {
+    const navigateGregorian = (delta: number) => {
       let m = viewMonth + delta;
       let y = viewYear;
       if (m < 1) {
@@ -402,6 +517,25 @@ export default function MoonCalendar() {
       }
       setViewMonth(m);
       setViewYear(y);
+    };
+
+    // В библейском режиме "месяц вперёд/назад" — это соседний элемент уже
+    // посчитанной последовательности biblicalMonths, а не арифметика над
+    // григорианским годом/месяцем.
+    const navigateBiblical = (delta: number) => {
+      setViewedBiblicalIndex((idx) => {
+        if (idx === null) return idx;
+        const next = idx + delta;
+        if (next < 0 || next >= biblicalMonths.length) return idx;
+        return next;
+      });
+    };
+
+    // Общая точка входа для кнопок ‹ › и свайпа — сама решает, какой режим
+    // сейчас активен, чтобы не дублировать эту проверку на каждом месте вызова.
+    const navigate = (delta: number) => {
+      if (calendarMode === "biblical") navigateBiblical(delta);
+      else navigateGregorian(delta);
     };
 
     /* ---------- Свайп для смены месяца ----------
@@ -452,6 +586,11 @@ export default function MoonCalendar() {
   const handleToggleWeekStart = async () => {
     const next = await toggleWeekStart(weekStart);
     setWeekStart(next);
+  };
+
+  const handleToggleCalendarMode = async () => {
+    const next = await toggleCalendarMode(calendarMode);
+    setCalendarMode(next);
   };
 
   const toggleObservation = async (iso: string) => {
@@ -866,6 +1005,12 @@ export default function MoonCalendar() {
       }
     : null;
 
+  // Номер библейского месяца для дня, открытого в модалке — используется
+  // только для подписи ("N-го месяца" вместо родового "синодического
+  // месяца"); счётчик дня (selInfo.syn.day) остаётся как есть, от
+  // наблюдений пользователя — тут заменяется только название месяца.
+  const selectedBiblicalMonth = selInfo ? biblicalMonthNumberFor(selInfo.iso) : null;
+
   // Восход/закат Солнца и Луны — для дня, открытого в модалке (любого, не
   // только сегодняшнего). Координаты берём с устройства (см. эффект выше),
   // а сам момент для расчёта — полдень ВЫБРАННОГО дня (см. localNoonForDate
@@ -884,15 +1029,25 @@ export default function MoonCalendar() {
       {/* Заголовок */}
       <header className="mb-3 flex items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-100 sm:text-2xl">
-          <span className="text-2xl">🌙</span> Лунный календарь
+          <span className="text-2xl">🌙</span> {t ? t.y : ""}
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             onClick={handleToggleWeekStart}
             className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
             title="Первый день недели"
           >
             Неделя с: <b className="text-sky-300">{weekStart === "sunday" ? "Вс" : "Пн"}</b>
+          </button>
+          <button
+            onClick={handleToggleCalendarMode}
+            className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+            title="Тип календарной сетки"
+          >
+            Календарь:{" "}
+            <b className="text-sky-300">
+              {calendarMode === "gregorian" ? "Григорианский" : "Библейский"}
+            </b>
           </button>
           {notifHealth && (
             !notifHealth.hasPermission ||
@@ -989,11 +1144,22 @@ export default function MoonCalendar() {
         </button>
         <div className="flex items-center gap-3">
           <span className="text-base font-semibold text-slate-100 sm:text-lg">
-            {MONTHS[viewMonth - 1]} {viewYear}
+            {calendarMode === "biblical"
+              ? viewedBiblicalMonth
+                ? `${viewedBiblicalMonth.number} месяц${viewedBiblicalMonth.isLeap ? " (Адар II)" : ""}`
+                : "Считаем…"
+              : MONTHS[viewMonth - 1]}
           </span>
           <button
             onClick={() => {
-              if (t) {
+              if (!t) return;
+              if (calendarMode === "biblical") {
+                const noon = new Date(t.y, t.m - 1, t.d, 12, 0, 0, 0);
+                const idx = biblicalMonths.findIndex(
+                  (m) => noon.getTime() >= m.start.getTime() && noon.getTime() < m.end.getTime()
+                );
+                if (idx >= 0) setViewedBiblicalIndex(idx);
+              } else {
                 setViewYear(t.y);
                 setViewMonth(t.m);
               }
@@ -1025,20 +1191,29 @@ export default function MoonCalendar() {
         ))}
       </div>
 
+      {/* Пока библейские месяцы ещё считаются (или для текущей даты месяц
+          почему-то не нашёлся) — сетку не рисуем, а не показываем пустоту. */}
+      {calendarMode === "biblical" && cells.length === 0 && (
+        <p className="mb-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-6 text-center text-xs text-slate-500">
+          {biblicalReady ? "Не удалось определить месяц для этой даты." : "Считаем библейский календарь…"}
+        </p>
+      )}
+
       {/* Сетка */}
             <div
               className="relative grid grid-cols-7 gap-1"
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-        {cells.map((iso, idx) => {
-          if (!iso)
+        {cells.map((cell, idx) => {
+          if (!cell)
             return (
               <div
                 key={idx}
                 className="min-h-[72px] rounded-lg bg-slate-900/40 sm:min-h-[86px]"
               />
             );
+          const iso = cell.iso;
           const p = parseISO(iso);
           const phase = moonPhaseTrig2(p.y, p.m, p.d);
           const syn = synodicDayFor(iso, obsDates);
@@ -1067,9 +1242,11 @@ export default function MoonCalendar() {
                         : "border-slate-800"
                 }`}
               >
-                {/* Число солнечного месяца — вверху слева */}
+                {/* Число дня — вверху слева: григорианский день месяца в
+                    обычном режиме или порядковый день библейского месяца
+                    в библейском режиме (см. построение cells выше). */}
                 <span className="absolute left-1 top-0.5 text-[11px] font-bold leading-4 text-sky-300 sm:text-sm">
-                  {p.d}
+                  {cell.dayLabel}
                 </span>
                 {/* Отметка наблюдения */}
                 {isObs && (
@@ -1149,7 +1326,7 @@ export default function MoonCalendar() {
             <div className="mb-3 flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-100">
-                  {selInfo.p.d} {MONTHS[selInfo.p.m - 1].toLowerCase()} {selInfo.p.y}
+                  {selInfo.p.d} {MONTHS[selInfo.p.m - 1].toLowerCase()}
                 </h3>
                 <p className="text-xs text-slate-400">
                   {WEEKDAYS_FULL[weekdayOfISO(selInfo.iso)]}
@@ -1172,7 +1349,12 @@ export default function MoonCalendar() {
                 </div>
                 {selInfo.syn && selInfo.syn.day >= 1 ? (
                   <div className="text-xs text-amber-400">
-                    {selInfo.syn.day}-й день синодического месяца
+                    {selInfo.syn.day}-й день{" "}
+                    {selectedBiblicalMonth
+                      ? `${selectedBiblicalMonth.number}-го месяца${
+                          selectedBiblicalMonth.isLeap ? " (Адар II)" : ""
+                        }`
+                      : "синодического месяца"}
                     {selInfo.syn.day === 1 ? " — первый день! 🌒" : ""}
                     <span className="text-slate-500">
                       {" "}
