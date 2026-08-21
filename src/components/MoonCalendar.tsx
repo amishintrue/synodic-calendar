@@ -625,6 +625,22 @@ export default function MoonCalendar() {
         return;
       }
 
+      // Проверка: дата+время не должны быть в прошлом. Для kind='date'
+      // сравниваем с датой выбранного дня; для 'weekly' — с сегодняшним
+      // днём недели (еженедельное "сегодня в 08:00" при текущем 10:00 —
+      // тоже прошлое). Если время уже прошло — возвращаем к выбору времени.
+      const checkISO = remKind === "date" ? selected : today;
+      if (checkISO) {
+        const { y, m, d } = parseISO(checkISO);
+        const [hh, mm] = remTime.split(":").map((v) => parseInt(v, 10));
+        const fireAt = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
+        if (fireAt.getTime() <= Date.now()) {
+          remTimeInputRef.current?.focus();
+          setTimeout(() => showPicker(remTimeInputRef.current), 0);
+          return;
+        }
+      }
+
     setSaving(true);
       const row = await addReminder(
         trimmed,
@@ -675,6 +691,27 @@ export default function MoonCalendar() {
     const proceed = async (title: string) => {
       const trimmed = title.trim();
       if (!trimmed) return;
+
+      // Проверка: дата+время не должны быть в прошлом. Для kind='date'
+      // сравниваем с выбранной датой; для 'weekly' — с сегодняшним днём
+      // недели. Если момент уже прошёл — возвращаем к выбору даты/времени.
+      const checkISO = editKind === "date" ? editDate : today;
+      if (checkISO) {
+        const { y, m, d } = parseISO(checkISO);
+        const [hh, mm] = (editTime || "00:00").split(":").map((v) => parseInt(v, 10));
+        const fireAt = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
+        if (fireAt.getTime() <= Date.now()) {
+          if (editKind === "date" && editDateInputRef.current) {
+            editDateInputRef.current.focus();
+            setTimeout(() => showPicker(editDateInputRef.current), 0);
+          } else {
+            editTimeInputRef.current?.focus();
+            setTimeout(() => showPicker(editTimeInputRef.current), 0);
+          }
+          return;
+        }
+      }
+
       const row = await updateReminder(
         id,
         trimmed,
