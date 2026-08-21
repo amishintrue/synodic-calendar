@@ -173,6 +173,58 @@ export interface BatteryOptimizationInfo {
   needsSpecialSettings: boolean;
   settingsPath: string[];
   instructions: string;
+  /**
+   * Варианты deep-link на экран автозапуска конкретной прошивки.
+   * Прошивки меняют пути между версиями (например, MIUI 12 → 14), поэтому
+   * пробуем по очереди несколько известных activity. Если ни одна не
+   * сработала — UI падает назад на страницу настроек приложения и текстовую
+   * инструкцию.
+   */
+  autostartIntents?: string[];
+  /**
+   * Deep-link на экран настроек батареи/оптимизации (если известен).
+   */
+  batteryIntent?: string;
+}
+
+/**
+ * Открывает Activity по строке "package/activity" через Android Intent.
+ * Работает только в нативном Capacitor; при отсутствии activity
+ * (другая версия прошивки) тихо возвращает false — вызывающий код
+ * показывает текстовую инструкцию.
+ */
+export async function openOemSettingsScreen(intentSpec?: string): Promise<boolean> {
+  if (!isCapacitor() || !intentSpec) return false;
+  try {
+    const { registerPlugin } = await import('@capacitor/core');
+    // Используем общий механизм Capacitor для вызова нативного метода.
+    // MainActivity наследует BridgeActivity, у которого есть startActivity.
+    const NativeIntents = registerPlugin<{ openActivity(options: { component: string }): Promise<void> }>(
+      'NativeIntents'
+    );
+    await NativeIntents.openActivity({ component: intentSpec });
+    return true;
+  } catch (error) {
+    console.warn('[Notifications] openOemSettingsScreen failed:', error);
+    return false;
+  }
+}
+
+/**
+ * Каскадный вариант: пробует по очереди все известные пути к экрану
+ * автозапуска данной прошивки, затем — гарантированный fallback на
+ * страницу настроек самого приложения (там у MIUI/Huawei тоже есть
+ * переключатели "Автозапуск"/"Запуск" в новых версиях).
+ * Возвращает true, если удалось открыть хоть что-то.
+ */
+export async function openAutostartScreen(intents: string[] = []): Promise<boolean> {
+  for (const spec of intents) {
+    if (await openOemSettingsScreen(spec)) return true;
+  }
+  // Fallback: страница нашего приложения в системных настройках —
+  // открывается всегда, на любой прошивке. На новых MIUI/EMUI там же
+  // лежат переключатели автозапуска.
+  return openOemSettingsScreen('com.android.settings/com.android.settings.applications.InstalledAppDetailsTop');
 }
 
 /**
@@ -205,12 +257,11 @@ export async function getBatteryOptimizationInfo(): Promise<BatteryOptimizationI
       manufacturer: 'Xiaomi/Redmi/POCO',
       needsSpecialSettings: true,
       settingsPath: ['Настройки', 'Приложения', 'Управление приложениями', '[Ваше приложение]', 'Другие разрешения'],
+      batteryIntent: 'android.settings.BATTERY_OPTIMIZATION_SETTINGS',
       instructions: `
-1. Откройте Настройки → Приложения → Управление приложениями
-2. Найдите это приложение
-3. Включите "Автозапуск"
-4. В разделе "Экономия батареи" выберите "Без ограничений"
-5. В MIUI: Безопасность → Батарея → Приложения → [приложение] → Без ограничений
+1. Автозапуск: Настройки → Приложения → Управление приложениями → [это приложение] → Другие разрешения → включите "Автозапуск"
+2. Нажмите "Открыть настройки батареи" ниже
+3. В списке найдите это приложение → выберите "Без ограничений"
       `.trim()
     };
   }
@@ -220,11 +271,11 @@ export async function getBatteryOptimizationInfo(): Promise<BatteryOptimizationI
       manufacturer: 'Huawei/Honor',
       needsSpecialSettings: true,
       settingsPath: ['Настройки', 'Батарея', 'Запуск приложений'],
+      batteryIntent: 'android.settings.BATTERY_OPTIMIZATION_SETTINGS',
       instructions: `
-1. Откройте Настройки → Батарея → Запуск приложений
-2. Найдите это приложение
-3. Отключите "Управление автоматически"
-4. Включите все три переключателя: Автозапуск, Вторичный запуск, Работа в фоне
+1. Автозапуск: Настройки → Батарея → Запуск приложений → [это приложение] → отключите "Управление автоматически" → включите Автозапуск и Работа в фоне
+2. Нажмите "Открыть настройки батареи" ниже
+3. В списке найдите это приложение → выберите "Не оптимизировать"
       `.trim()
     };
   }
@@ -234,11 +285,11 @@ export async function getBatteryOptimizationInfo(): Promise<BatteryOptimizationI
       manufacturer: 'Samsung',
       needsSpecialSettings: true,
       settingsPath: ['Настройки', 'Уход за устройством', 'Батарея'],
+      batteryIntent: 'android.settings.BATTERY_OPTIMIZATION_SETTINGS',
       instructions: `
-1. Откройте Настройки → Уход за устройством → Батарея
-2. Нажмите на три точки → Настройки
-3. Отключите "Перевод в спящий режим неиспользуемых приложений"
-4. Добавьте приложение в "Приложения без ограничений"
+1. Нажмите "Открыть настройки батареи" ниже
+2. Выберите "Все приложения" → найдите это приложение → "Не оптимизировать"
+3. Также: Настройки → Уход за устройством → Батарея → ⋮ → Настройки → отключите "Перевод в спящий режим неиспользуемых приложений"
       `.trim()
     };
   }
@@ -248,11 +299,11 @@ export async function getBatteryOptimizationInfo(): Promise<BatteryOptimizationI
       manufacturer: 'OPPO/Realme/OnePlus',
       needsSpecialSettings: true,
       settingsPath: ['Настройки', 'Батарея', 'Управление приложениями'],
+      batteryIntent: 'android.settings.BATTERY_OPTIMIZATION_SETTINGS',
       instructions: `
-1. Откройте Настройки → Батарея
-2. Найдите это приложение
-3. Выберите "Разрешить работу в фоне"
-4. В разделе "Автозапуск" разрешите автозапуск приложения
+1. Автозапуск: Настройки → Приложения → Управление приложениями → [это приложение] → разрешите "Автозапуск"
+2. Нажмите "Открыть настройки батареи" ниже
+3. В списке найдите это приложение → выберите "Не оптимизировать" / "Разрешить работу в фоне"
       `.trim()
     };
   }
@@ -262,10 +313,11 @@ export async function getBatteryOptimizationInfo(): Promise<BatteryOptimizationI
       manufacturer: 'Vivo',
       needsSpecialSettings: true,
       settingsPath: ['Настройки', 'Батарея', 'Высокое потребление в фоне'],
+      batteryIntent: 'android.settings.BATTERY_OPTIMIZATION_SETTINGS',
       instructions: `
-1. Откройте i Менеджер → Управление приложениями → Автозапуск
-2. Разрешите автозапуск для этого приложения
-3. В настройках батареи выберите "Высокое потребление в фоне"
+1. Автозапуск: i Менеджер → Управление приложениями → Автозапуск → разрешите для этого приложения
+2. Нажмите "Открыть настройки батареи" ниже
+3. В списке найдите это приложение → выберите "Высокое потребление в фоне"
       `.trim()
     };
   }
@@ -275,10 +327,10 @@ export async function getBatteryOptimizationInfo(): Promise<BatteryOptimizationI
     manufacturer: 'Android',
     needsSpecialSettings: false,
     settingsPath: ['Настройки', 'Приложения', '[Приложение]', 'Батарея'],
+    batteryIntent: 'android.settings.BATTERY_OPTIMIZATION_SETTINGS',
     instructions: `
-1. Откройте Настройки → Приложения → Это приложение
-2. Нажмите "Батарея"
-3. Выберите "Не ограничивать" или "Без ограничений"
+1. Нажмите "Открыть настройки батареи" ниже
+2. В списке найдите это приложение → выберите "Не оптимизировать"
     `.trim()
   };
 }

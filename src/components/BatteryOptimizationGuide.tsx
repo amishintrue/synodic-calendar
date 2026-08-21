@@ -1,6 +1,11 @@
 'use client';
 
-import type { BatteryOptimizationInfo } from '@/lib/local-notifications';
+import { useState } from 'react';
+import {
+  openAutostartScreen,
+  openOemSettingsScreen,
+  type BatteryOptimizationInfo,
+} from '@/lib/local-notifications';
 
 interface BatteryOptimizationGuideProps {
   batteryInfo: BatteryOptimizationInfo;
@@ -14,12 +19,27 @@ interface BatteryOptimizationGuideProps {
  * Раньше это был баннер, который постоянно висел в календаре. Теперь —
  * модалка, открывается по клику на колокольчик в шапке (см. MoonCalendar),
  * когда checkNotificationHealth() решит, что нужна настройка батареи/автозапуска.
+ *
+ * Для известных производителей показывает кнопку-диплинк, открывающую нужный
+ * экран настроек прошивки напрямую. Если Intent не сработал (прошивка изменила
+ * путь), пользователь остаётся с текстовой инструкцией как fallback.
  */
 export default function BatteryOptimizationGuide({
   batteryInfo,
   onDismiss,
   onClose,
 }: BatteryOptimizationGuideProps) {
+  const [batteryFailed, setBatteryFailed] = useState(false);
+
+  const handleOpen = async (
+    _intentSpec: string | undefined,
+    onFail: () => void,
+    action?: () => Promise<boolean>
+  ) => {
+    const ok = action ? await action() : false;
+    if (!ok) onFail();
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4"
@@ -40,8 +60,7 @@ export default function BatteryOptimizationGuide({
 
         <p className="mb-3 text-sm text-amber-200/80">
           На устройствах {batteryInfo.manufacturer} система по умолчанию убивает
-          фоновые напоминания. Чтобы они приходили, даже когда приложение
-          закрыто, один раз настройте автозапуск и батарею вручную:
+          фоновые напоминания. Настройте автозапуск и батарею:
         </p>
 
         <div className="rounded-lg bg-black/30 p-3">
@@ -53,16 +72,34 @@ export default function BatteryOptimizationGuide({
           </p>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <a
-            href="https://dontkillmyapp.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-lg bg-amber-600/20 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-600/30"
+        {/* Кнопка прямого перехода в настройки батареи — после инструкции */}
+        {batteryInfo.batteryIntent && !batteryFailed && (
+          <button
+            onClick={() =>
+              handleOpen(
+                undefined,
+                () => setBatteryFailed(true),
+                () => openOemSettingsScreen(batteryInfo.batteryIntent)
+              )
+            }
+            className="mt-3 w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-500"
           >
-            📱 Инструкции для других устройств
-          </a>
-        </div>
+            🔋 Открыть настройки батареи
+          </button>
+        )}
+
+        {batteryFailed && (
+          <p className="mt-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            Не удалось открыть экран настроек автоматически — воспользуйтесь
+            инструкцией выше для вашей версии прошивки.
+          </p>
+        )}
+
+        <p className="mt-3 text-[11px] text-slate-500">
+          Мы не можем проверить настройку автоматически (Android не даёт API
+          для этих переключателей прошивки) — «Готово» просто скроет
+          напоминание, чтобы не мешало.
+        </p>
 
         <div className="mt-4 flex gap-2">
           <button
@@ -78,11 +115,6 @@ export default function BatteryOptimizationGuide({
             Позже
           </button>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">
-          Мы не можем проверить это автоматически (Android не даёт API для
-          этой конкретной настройки прошивки) — «Готово» просто скроет
-          напоминание, чтобы не мешало.
-        </p>
       </div>
     </div>
   );

@@ -265,6 +265,11 @@ export default function MoonCalendar() {
   // Hardware back button handling
   useEffect(() => {
     const handleBackButton = () => {
+      // Модалка настройки батареи — самый верхний слой, закрываем первой
+      if (showBatteryModal) {
+        setShowBatteryModal(false);
+        return;
+      }
       // Если редактируется напоминание (в т.ч. прямо внутри модалки дня) —
       // сначала отменяем редактирование, а не закрываем всю модалку разом.
       if (editingReminderId !== null) {
@@ -292,7 +297,10 @@ export default function MoonCalendar() {
 
     const handlePopState = (e: PopStateEvent) => {
       e.preventDefault();
-      if (editingReminderId !== null) {
+      if (showBatteryModal) {
+        setShowBatteryModal(false);
+        history.pushState(null, "", window.location.href);
+      } else if (editingReminderId !== null) {
         setEditingReminderId(null);
         history.pushState(null, "", window.location.href);
       } else if (selected) {
@@ -308,7 +316,7 @@ export default function MoonCalendar() {
       removeBackListener?.();
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [selected, editingReminderId]);
+  }, [selected, editingReminderId, showBatteryModal]);
 
   const refreshNotificationHealth = useCallback(async () => {
     const [health, info] = await Promise.all([
