@@ -1076,6 +1076,45 @@ export default function MoonCalendar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selInfo?.iso, location]);
 
+  // Создаёт разовое напоминание "за полчаса до захода солнца/луны" на
+  // момент, по которому тапнули в карточке "Восход и закат" модалки дня.
+  // Время напоминания = момент события минус 30 минут (округление вниз до
+  // минуты), текст — фиксированный, дата — выбранный в календаре день.
+  const addSunsetReminder = async (
+    eventAt: Date | null | undefined,
+    kind: "sun" | "moon"
+  ) => {
+    if (!eventAt || !selInfo) return;
+
+    const remindAt = new Date(eventAt.getTime() - 30 * 60 * 1000);
+    if (remindAt.getTime() <= Date.now()) return; // событие уже скоро/прошло
+
+    const hh = String(remindAt.getHours()).padStart(2, "0");
+    const mm = String(remindAt.getMinutes()).padStart(2, "0");
+    const time = `${hh}:${mm}`;
+
+    const title =
+      kind === "sun" ? "Заход солнца через полчаса" : "Заход луны через полчаса";
+
+    // Защита от дублей: такое же напоминание (та же дата, время и текст)
+    // уже существует — не создаём второе.
+    const duplicate = reminders.some(
+      (r) =>
+        r.kind === "date" &&
+        r.date === selInfo.iso &&
+        r.time === time &&
+        r.title === title
+    );
+    if (duplicate) return;
+
+    try {
+      const row = await addReminder(title, "date", selInfo.iso, null, time);
+      setReminders((prev) => [...prev, row]);
+    } catch (error) {
+      console.error("Failed to add sunset reminder:", error);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl px-2 pb-16 pt-4 sm:px-4">
       {/* Заголовок */}
@@ -1454,9 +1493,15 @@ export default function MoonCalendar() {
                   </div>
                   <div className="rounded-lg bg-black/30 p-2">
                     <div className="text-[11px] text-slate-400">🌇 Закат солнца</div>
-                    <div className="font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => addSunsetReminder(selectedAstro?.sunset, "sun")}
+                      disabled={!selectedAstro?.sunset}
+                      title="Создать напоминание за полчаса до захода"
+                      className="w-full text-left font-semibold hover:text-sky-300 disabled:cursor-default"
+                    >
                       {formatTime(selectedAstro?.sunset ?? null, location.timeZone)}
-                    </div>
+                    </button>
                   </div>
                   <div className="rounded-lg bg-black/30 p-2">
                     <div className="text-[11px] text-slate-400">🌙 Восход луны</div>
@@ -1470,13 +1515,23 @@ export default function MoonCalendar() {
                   </div>
                   <div className="rounded-lg bg-black/30 p-2">
                     <div className="text-[11px] text-slate-400">🌑 Заход луны</div>
-                    <div className="font-semibold">
-                      {selectedAstro?.moonAlwaysUp
-                        ? "не заходит"
-                        : selectedAstro?.moonAlwaysDown
-                          ? "не восходит"
-                          : formatTime(selectedAstro?.moonset ?? null, location.timeZone)}
-                    </div>
+                    {selectedAstro?.moonAlwaysUp || selectedAstro?.moonAlwaysDown ? (
+                      <div className="font-semibold">
+                        {selectedAstro?.moonAlwaysUp
+                          ? "не заходит"
+                          : "не восходит"}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addSunsetReminder(selectedAstro?.moonset, "moon")}
+                        disabled={!selectedAstro?.moonset}
+                        title="Создать напоминание за полчаса до захода"
+                        className="w-full text-left font-semibold hover:text-sky-300 disabled:cursor-default"
+                      >
+                        {formatTime(selectedAstro?.moonset ?? null, location.timeZone)}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
