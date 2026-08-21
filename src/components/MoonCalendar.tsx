@@ -84,6 +84,21 @@ const MONTHS = [
   "Ноябрь",
   "Декабрь",
 ];
+/** Родительный падеж — для дат вида «21 августа», «1 июля» в модалке дня. */
+const MONTHS_GEN = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+];
 const WEEKDAYS_FULL = [
   "Воскресенье",
   "Понедельник",
@@ -1066,7 +1081,13 @@ export default function MoonCalendar() {
       {/* Заголовок */}
       <header className="mb-3 flex items-center justify-between gap-2">
         <h1 className="flex items-center gap-2 text-lg font-bold text-slate-100 sm:text-2xl">
-          <span className="text-2xl">🌙</span> {t ? t.y : ""}
+          <img
+            src="/images/moon-icon.png"
+            alt=""
+            className="h-7 w-7 sm:h-8 sm:w-8"
+            draggable={false}
+          />{" "}
+          {t ? t.y : ""}
         </h1>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <button
@@ -1363,7 +1384,7 @@ export default function MoonCalendar() {
             <div className="mb-3 flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-100">
-                  {selInfo.p.d} {MONTHS[selInfo.p.m - 1].toLowerCase()}
+                  {selInfo.p.d} {MONTHS_GEN[selInfo.p.m - 1]}
                 </h3>
                 <p className="text-xs text-slate-400">
                   {WEEKDAYS_FULL[weekdayOfISO(selInfo.iso)]}
