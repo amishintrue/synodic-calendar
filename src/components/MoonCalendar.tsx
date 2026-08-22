@@ -43,6 +43,7 @@ import {
   ensureExactAlarmsAllowed,
   checkNotificationHealth,
   getBatteryOptimizationInfo,
+  isPastDateTime,
   type BatteryOptimizationInfo,
 } from "@/lib/local-notifications";
 import NoteEditor, { NoteEditorHandle } from "@/components/NoteEditor";
@@ -648,20 +649,14 @@ export default function MoonCalendar() {
         return;
       }
 
-      // Проверка: дата+время не должны быть в прошлом. Для kind='date'
-      // сравниваем с датой выбранного дня; для 'weekly' — с сегодняшним
-      // днём недели (еженедельное "сегодня в 08:00" при текущем 10:00 —
-      // тоже прошлое). Если время уже прошло — возвращаем к выбору времени.
-      const checkISO = remKind === "date" ? selected : today;
-      if (checkISO) {
-        const { y, m, d } = parseISO(checkISO);
-        const [hh, mm] = remTime.split(":").map((v) => parseInt(v, 10));
-        const fireAt = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
-        if (fireAt.getTime() <= Date.now()) {
-          remTimeInputRef.current?.focus();
-          setTimeout(() => showPicker(remTimeInputRef.current), 0);
-          return;
-        }
+      // Проверка "в прошлом" — только для kind='date'. Еженедельные
+      // напоминания планировщик сам корректно переносит на следующий
+      // подходящий день недели (getNextWeeklyOccurrence), так что
+      // валидация для них не нужна и была бы ошибочной.
+      if (remKind === "date" && selected && isPastDateTime(selected, remTime)) {
+        remTimeInputRef.current?.focus();
+        setTimeout(() => showPicker(remTimeInputRef.current), 0);
+        return;
       }
 
     setSaving(true);
@@ -715,16 +710,13 @@ export default function MoonCalendar() {
       const trimmed = title.trim();
       if (!trimmed) return;
 
-      // Проверка: дата+время не должны быть в прошлом. Для kind='date'
-      // сравниваем с выбранной датой; для 'weekly' — с сегодняшним днём
-      // недели. Если момент уже прошёл — возвращаем к выбору даты/времени.
-      const checkISO = editKind === "date" ? editDate : today;
-      if (checkISO) {
-        const { y, m, d } = parseISO(checkISO);
-        const [hh, mm] = (editTime || "00:00").split(":").map((v) => parseInt(v, 10));
-        const fireAt = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
-        if (fireAt.getTime() <= Date.now()) {
-          if (editKind === "date" && editDateInputRef.current) {
+      // Проверка "в прошлом" — только для kind='date'. Еженедельные
+      // напоминания планировщик сам переносит на следующий день недели.
+      // Дефолт пустого времени — DEFAULT_REMINDER_TIME (09:00), тот же,
+      // что использует scheduleReminderNotification.
+      if (editKind === "date") {
+        if (editDate && isPastDateTime(editDate, editTime)) {
+          if (editDateInputRef.current) {
             editDateInputRef.current.focus();
             setTimeout(() => showPicker(editDateInputRef.current), 0);
           } else {
@@ -945,16 +937,7 @@ export default function MoonCalendar() {
               />{" "}
               📅
             </label>
-            {editKind === "date" && (
-              <input
-                ref={editDateInputRef}
-                type="date"
-                value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
-                onKeyDown={handleEditDateKeyDown}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
-              />
-            )}
+            {/* Пиктограммы выбора типа — всегда рядом: 📅 затем 🔁 */}
             <label
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 ${
                 editKind === "weekly"
@@ -970,6 +953,16 @@ export default function MoonCalendar() {
               />{" "}
               🔁
             </label>
+            {editKind === "date" && (
+              <input
+                ref={editDateInputRef}
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                onKeyDown={handleEditDateKeyDown}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
+              />
+            )}
             {editKind === "weekly" && (
               <select
                 ref={editWeekdaySelectRef}
@@ -991,8 +984,14 @@ export default function MoonCalendar() {
               value={editTime}
               onChange={(e) => setEditTime(e.target.value)}
               onKeyDown={handleEditTimeKeyDown}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
+              className="w-auto shrink-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
             />
+            {/* Живое предупреждение о прошедшем времени (только kind='date') —
+                тот же неблокирующий приём, что и "● не сохранено" в NoteEditor:
+                считается на каждый рендер из текущего state, ничего не блокирует. */}
+            {editKind === "date" && editDate && editTime && isPastDateTime(editDate, editTime) && (
+              <span className="ml-2 text-[11px] text-amber-400">● прошедшее время</span>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -1095,7 +1094,8 @@ export default function MoonCalendar() {
     if (!eventAt || !selInfo) return;
 
     const remindAt = new Date(eventAt.getTime() - 30 * 60 * 1000);
-    if (remindAt.getTime() <= Date.now()) return; // событие уже скоро/прошло
+    // Событие уже скоро/прошло — общий хелпер валидации
+    if (isPastDateTime(selInfo.iso, `${remindAt.getHours()}:${remindAt.getMinutes()}`)) return;
 
     const hh = String(remindAt.getHours()).padStart(2, "0");
     const mm = String(remindAt.getMinutes()).padStart(2, "0");

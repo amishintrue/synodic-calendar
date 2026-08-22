@@ -27,6 +27,25 @@ import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { APP_TIMEZONE, nowInAppTimezone } from '@/lib/reminders';
 
+/** Время по умолчанию для напоминаний без указанного времени (HH:MM).
+ *  Единственный источник истины — используется и планировщиком, и UI-валидацией. */
+export const DEFAULT_REMINDER_TIME = '09:00';
+
+/**
+ * Проверяет, находится ли дата+время в прошлом. Общая точка истины для
+ * UI-валидации напоминаний (создание/редактирование/заходы солнца-луны),
+ * чтобы условия "<=" vs "<" и дефолты времени не расходились между местами.
+ *
+ * @param iso   Дата в формате YYYY-MM-DD
+ * @param hhmm  Время в формате HH:MM (пустая строка → DEFAULT_REMINDER_TIME)
+ */
+export function isPastDateTime(iso: string, hhmm: string): boolean {
+  const { y, m, d } = { y: +iso.slice(0, 4), m: +iso.slice(5, 7), d: +iso.slice(8, 10) };
+  const [hh, mm] = (hhmm || DEFAULT_REMINDER_TIME).split(':').map((v) => parseInt(v, 10));
+  const fireAt = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
+  return fireAt.getTime() <= Date.now();
+}
+
 // ============================================================================
 // Вспомогательные функции для перевода времени (взяты из старой версии)
 // ============================================================================
@@ -448,7 +467,7 @@ export async function scheduleReminderNotification(r: SchedulableReminder): Prom
   // Сначала отменяем существующее уведомление с этим ID
   await cancelNotification(r.id);
 
-  const time = r.time || '09:00';
+  const time = r.time || DEFAULT_REMINDER_TIME;
 
   try {
     if (r.kind === 'date' && r.date) {
