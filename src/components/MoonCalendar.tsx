@@ -1127,14 +1127,9 @@ export default function MoonCalendar() {
     <div className="mx-auto max-w-3xl px-2 pb-16 pt-4 sm:px-4">
       {/* Заголовок */}
       <header className="mb-3 flex items-center justify-between gap-2">
-        <h1 className="flex items-center gap-2 text-lg font-bold text-slate-100 sm:text-2xl">
-          <img
-            src="/images/moon-icon.png"
-            alt=""
-            className="h-7 w-7 sm:h-8 sm:w-8"
-            draggable={false}
-          />{" "}
-          {t ? t.y : ""}
+        <h1 className="flex items-start gap-1 text-lg font-bold text-slate-100 sm:text-2xl">
+          <span className="mt-0.5 text-sm leading-none sm:text-base">🌙</span>
+          <span className="text-3xl sm:text-4xl">{t ? t.y : ""}</span>
         </h1>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <button
@@ -1428,14 +1423,12 @@ export default function MoonCalendar() {
             className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-700 bg-slate-900 p-4 sm:rounded-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100">
-                  {selInfo.p.d} {MONTHS_GEN[selInfo.p.m - 1]}
-                </h3>
-                <p className="text-xs text-slate-400">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="whitespace-nowrap text-lg font-bold text-slate-100">
+                  {selInfo.p.d} {MONTHS_GEN[selInfo.p.m - 1]},{" "}
                   {WEEKDAYS_FULL[weekdayOfISO(selInfo.iso)]}
-                </p>
+                </h3>
               </div>
               <button
                 onClick={closeDayModal}
