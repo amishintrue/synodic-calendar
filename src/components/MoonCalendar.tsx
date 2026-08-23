@@ -1426,8 +1426,8 @@ export default function MoonCalendar() {
             <div className="mb-3 flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="whitespace-nowrap text-lg font-bold text-slate-100">
-                  {selInfo.p.d} {MONTHS_GEN[selInfo.p.m - 1]},{" "}
-                  {WEEKDAYS_FULL[weekdayOfISO(selInfo.iso)]}
+                  {WEEKDAYS_FULL[weekdayOfISO(selInfo.iso)]},{" "}
+                  {selInfo.p.d} {MONTHS_GEN[selInfo.p.m - 1]}
                 </h3>
               </div>
               <button
