@@ -34,7 +34,6 @@ import {
 import {
   buildBiblicalMonths,
   findBiblicalMonthFor,
-  getBiblicalDayInfo,
   type BiblicalMonth,
 } from "@/lib/biblical-calendar";
 import { jerusalemYMD, MS_PER_DAY } from "@/lib/biblical-astro";
@@ -469,12 +468,10 @@ export default function MoonCalendar() {
   const cells: GridCell[] = [];
   if (calendarMode === "biblical") {
     if (viewedBiblicalMonth) {
-      // Сетка строится тем же путём, что и модалка/заголовок: берём КАЖДЫЙ
-      // гражданский день диапазона месяца, делаем из него полдень и через
-      // getBiblicalDayInfo (biblicalDayStart → findBiblicalMonthFor) получаем
-      // его номер в библейском месяце. Наивная арифметика "start + n дней"
-      // здесь не годится: она рассинхронизируется с findBiblicalMonthFor,
-      // из-за чего номер дня на клетке расходился с модалкой.
+      // Диапазон клеток — гражданские дни от дня после вечера неомении до
+      // гражданского дня заката следующего месяца. Номера библейских дней
+      // в ячейки больше не выводятся: в обоих режимах в углу — григорианское
+      // число, внизу справа — день от наблюдения (см. рендер ниже).
       const startYmd = jerusalemYMD(viewedBiblicalMonth.start);
       const day1ISO = addDaysISO(toISO(startYmd.y, startYmd.m, startYmd.d), 1);
       const endYmd = jerusalemYMD(viewedBiblicalMonth.end);
@@ -482,19 +479,11 @@ export default function MoonCalendar() {
       let iso = day1ISO;
       const lastISO = toISO(endYmd.y, endYmd.m, endYmd.d);
       while (iso <= lastISO) {
-        const { y, m, d } = parseISO(iso);
-        // Полдень по местному времени — та же точка отсчёта, что в
-        // biblicalMonthNumberFor (не задевает границу библейских суток).
-        const noon = new Date(y, m - 1, d, 12, 0, 0, 0);
-        const info = getBiblicalDayInfo(biblicalMonths, noon);
-        if (info.month && info.month === viewedBiblicalMonth && info.dayOfMonth >= 1) {
-          cells.push({ iso, dayLabel: info.dayOfMonth });
-        }
+        cells.push({ iso, dayLabel: 0 });
         iso = addDaysISO(iso, 1);
       }
 
-      const firstCellIdx = cells.findIndex((c) => c !== null);
-      const firstWd = firstCellIdx >= 0 ? weekdayOfISO(cells[firstCellIdx]!.iso) : 0;
+      const firstWd = weekdayOfISO(day1ISO);
       const startOffset = weekStart === "sunday" ? firstWd : (firstWd + 6) % 7;
 
       for (let i = 0; i < startOffset; i++) cells.unshift(null);
@@ -1369,15 +1358,8 @@ export default function MoonCalendar() {
                 )}
                 {/* Пиктограмма */}
                 <MoonIcon moonDay={phase} size={30} />
-                {/* Библейский день (из viewedBiblicalMonth) — внизу справа,
-                    пока нет синодического дня от наблюдений (syn.day). После
-                    отметки наблюдения вместо него показывается syn.day. */}
-                {calendarMode === "biblical" && cell.dayLabel >= 1 && !(syn && syn.day >= 1) && (
-                  <span className="absolute bottom-0.5 right-1 text-[11px] font-bold leading-4 text-amber-400 sm:text-sm">
-                    {cell.dayLabel}
-                  </span>
-                )}
-                {/* Число синодического месяца — внизу справа */}
+                {/* Число синодического месяца — внизу справа (только при
+                    наличии нумерации от наблюдений пользователя) */}
                 {syn && syn.day >= 1 && (
                   <span
                     className={`absolute bottom-0.5 right-1 text-[11px] font-bold leading-4 sm:text-sm ${
