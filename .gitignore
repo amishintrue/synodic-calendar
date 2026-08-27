@@ -41,8 +41,10 @@ ptch/
 *.bak
 *.tmp
 *.temp
-build-android.bat
-app-debug.apk
+*.bat
+*.apk
 IDEA.md
 drizzle.config.json
+key.properties
+my-release-key.jks
 

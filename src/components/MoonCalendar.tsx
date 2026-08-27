@@ -36,7 +36,7 @@ import {
   findBiblicalMonthFor,
   type BiblicalMonth,
 } from "@/lib/biblical-calendar";
-import { jerusalemYMD, MS_PER_DAY } from "@/lib/biblical-astro";
+import { jerusalemYMD } from "@/lib/biblical-astro";
 import {
   initializeNotifications,
   requestNotificationPermission,
@@ -58,10 +58,9 @@ import {
 
 type Observation = { id: number; date: string };
 type Note = { date: string; comment: string };
-/** Одна ячейка календарной сетки: либо реальный день (с числом для подписи
- * в углу — григорианским днём месяца или номером дня библейского месяца),
- * либо `null` для пустой клетки-заполнителя. */
-type GridCell = { iso: string; dayLabel: number } | null;
+/** Одна ячейка календарной сетки: либо реальный день (с григорианским
+ * днём месяца в углу), либо `null` для пустой клетки-заполнителя. */
+type GridCell = { iso: string } | null;
 type Reminder = {
   id: number;
   title: string;
@@ -479,9 +478,9 @@ export default function MoonCalendar() {
       let iso = day1ISO;
       const lastISO = toISO(endYmd.y, endYmd.m, endYmd.d);
       while (iso <= lastISO) {
-        cells.push({ iso, dayLabel: 0 });
-        iso = addDaysISO(iso, 1);
-      }
+              cells.push({ iso });
+              iso = addDaysISO(iso, 1);
+            }
 
       const firstWd = weekdayOfISO(day1ISO);
       const startOffset = weekStart === "sunday" ? firstWd : (firstWd + 6) % 7;
@@ -496,7 +495,7 @@ export default function MoonCalendar() {
 
     for (let i = 0; i < startOffset; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) {
-      cells.push({ iso: toISO(viewYear, viewMonth, d), dayLabel: d });
+      cells.push({ iso: toISO(viewYear, viewMonth, d) });
     }
     while (cells.length % 7 !== 0) cells.push(null);
   }
