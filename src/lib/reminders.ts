@@ -7,6 +7,10 @@
  * заново задеплойте (в drizzle-миграции это не участвует). */
 export const APP_TIMEZONE = "Asia/Yekaterinburg";
 
+/** Время по умолчанию для напоминаний без указанного времени (HH:MM).
+ *  Единственный источник истины — используется планировщиком и UI-валидацией. */
+export const DEFAULT_REMINDER_TIME = "09:00";
+
 export type ReminderRow = {
   id: number;
   title: string;
@@ -57,3 +61,25 @@ export function isReminderDueNow(
   if (r.time && r.time > today.hhmm) return false; // время ещё не наступило
   return true;
 }
+
+/**
+ * Проверяет, находится ли дата+время в прошлом. Общая точка истины для
+ * UI-валидации напоминаний (создание/редактирование/заходы солнца-луны),
+ * чтобы условия "<=" vs "<" и дефолты времени не расходились между местами.
+ *
+ * Считает по ЛОКАЛЬНЫМ часам устройства — именно в них пользователь вводит
+ * дату/время в браузере (input type="date"/"time").
+ *
+ * @param iso   Дата в формате YYYY-MM-DD
+ * @param hhmm  Время в формате HH:MM (пустая строка → DEFAULT_REMINDER_TIME)
+ */
+export function isPastDateTime(iso: string, hhmm: string): boolean {
+  const y = +iso.slice(0, 4);
+  const m = +iso.slice(5, 7);
+  const d = +iso.slice(8, 10);
+  const [hh, mm] = (hhmm || DEFAULT_REMINDER_TIME).split(":").map((v) => parseInt(v, 10));
+  const fireAt = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
+  return fireAt.getTime() <= Date.now();
+}
+
+
